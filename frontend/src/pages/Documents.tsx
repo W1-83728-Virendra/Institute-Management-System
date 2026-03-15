@@ -427,7 +427,7 @@ const Documents = () => {
               ))}
             </TextField>
             
-            {/* Category Filter */}
+            {/* Category Filter
             <TextField
               select
               size="small"
@@ -441,7 +441,7 @@ const Documents = () => {
               <MenuItem value="id_proof">ID Proof</MenuItem>
               <MenuItem value="certificate">Certificate</MenuItem>
               <MenuItem value="other">Other</MenuItem>
-            </TextField>
+            </TextField> */}
           </Box>
           
           {/* Date Range and Sort Row */}

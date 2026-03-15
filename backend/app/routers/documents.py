@@ -88,7 +88,7 @@ async def get_documents(
     if status:
         query = query.where(Document.status == status)
     if document_type:
-        query = query.where(Document.document_type == document_type)
+        query = query.where(Document.document_type.ilike(document_type))
     if category:
         query = query.where(Document.category == category)
     
@@ -193,6 +193,7 @@ async def get_document_types(
         {"value": "library_card", "label": "Library Card"},
         {"value": "other", "label": "Other Document"}
     ]
+    
     return {"document_types": document_types}
 
 

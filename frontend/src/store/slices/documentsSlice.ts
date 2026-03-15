@@ -9,7 +9,7 @@ interface DocumentFilterState {
   search: string;               // Search by student name or admission number
   status: string;                // Filter by status: pending, verified, rejected
   document_type: string;         // Filter by document type
-  category: string;              // Filter by category
+  // category: string;          // COMMENTED - Filter by category (not needed)
   date_from: string;             // Filter documents from this date
   date_to: string;               // Filter documents until this date
   sort_by: string;              // Field to sort by
@@ -59,7 +59,7 @@ const initialFilterState: DocumentFilterState = {
   search: '',
   status: '',
   document_type: '',
-  category: '',
+  // category: '',  // COMMENTED - not needed
   date_from: '',
   date_to: '',
   sort_by: 'issued_date',
@@ -112,7 +112,7 @@ export const fetchDocuments = createAsyncThunk(
         ...(filters.search && { search: filters.search }),
         ...(filters.status && { status: filters.status }),
         ...(filters.document_type && { document_type: filters.document_type }),
-        ...(filters.category && { category: filters.category }),
+        // ...(filters.category && { category: filters.category }), // COMMENTED - category filter removed
         ...(filters.date_from && { date_from: filters.date_from }),
         ...(filters.date_to && { date_to: filters.date_to }),
         ...(filters.sort_by && { sort_by: filters.sort_by }),

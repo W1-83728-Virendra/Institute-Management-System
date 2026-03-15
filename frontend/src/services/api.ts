@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8001/api';
+const API_URL = 'http://localhost:8003/api';
 
 const getAuthHeader = () => {
   const token = localStorage.getItem('access_token');
@@ -112,7 +112,7 @@ export interface DocumentFilters {
   search?: string;              // Search by student name or admission number
   status?: string;               // Filter by status: pending, verified, rejected
   document_type?: string;        // Filter by document type
-  category?: string;            // Filter by category
+  // category?: string;          // COMMENTED - not needed
   date_from?: string;           // Filter documents from this date (ISO string)
   date_to?: string;             // Filter documents until this date (ISO string)
   sort_by?: 'issued_date' | 'student_name' | 'status' | 'document_type';  // Field to sort by
