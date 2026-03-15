@@ -99,7 +99,8 @@ async def seed_admin_user():
             for sem in [1, 2, 3]:
                 fee = Fee(
                     student_id=student_profile.id,
-                    course_id=course.id,
+                    # course_id=course.id,
+                    course=course.name,
                     fee_type="Tuition Fee",
                     amount=25000,
                     due_date=datetime(2024 if sem == 1 or sem == 2 else 2025, 6 if sem % 2 == 1 else 12, 15),
@@ -112,7 +113,8 @@ async def seed_admin_user():
             # Add one pending fee for demo
             pending_fee = Fee(
                 student_id=student_profile.id,
-                course_id=course.id,
+                # course_id=course.id,
+                course=course.name,
                 fee_type="Exam Fee",
                 amount=5000,
                 due_date=datetime(2025, 6, 15),

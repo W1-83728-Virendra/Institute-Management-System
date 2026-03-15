@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import uuid
 import zipfile
@@ -37,17 +37,52 @@ async def log_audit(db: AsyncSession, document_id: int, user_id: int, action: st
 async def get_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
+    # Basic filters
     student_id: Optional[int] = None,
     status: Optional[str] = None,
     document_type: Optional[str] = None,
     category: Optional[str] = None,
+    # Advanced filters - search by student name or admission number
+    search: Optional[str] = None,
+    # Date range filters for filtering by issued_date
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    # Sorting options - sort_by field and sort_order direction
+    sort_by: Optional[str] = Query(None, regex='^(issued_date|student_name|status|document_type)$'),
+    sort_order: Optional[str] = Query('desc', regex='^(asc|desc)$'),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all documents with pagination and filters."""
+    """
+    Get all documents with pagination and advanced filters.
+    
+    Filter Parameters:
+    - search: Search by student name or admission number
+    - status: Filter by document status (pending, verified, rejected)
+    - document_type: Filter by document type
+    - category: Filter by category
+    - date_from: Filter documents issued from this date
+    - date_to: Filter documents issued until this date
+    
+    Sort Parameters:
+    - sort_by: Field to sort by (issued_date, student_name, status, document_type)
+    - sort_order: Sort direction (asc or desc)
+    """
+    # Start with base query joining Document with Student
     query = select(Document).join(Student)
     
-    # Apply filters
+    # Search by student name or admission number
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                Student.first_name.ilike(search_pattern),
+                Student.last_name.ilike(search_pattern),
+                Student.admission_no.ilike(search_pattern)
+            )
+        )
+    
+    # Apply basic filters
     if student_id:
         query = query.where(Document.student_id == student_id)
     if status:
@@ -57,19 +92,54 @@ async def get_documents(
     if category:
         query = query.where(Document.category == category)
     
+    # Date range filter
+    if date_from:
+        try:
+            from_date = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+            query = query.where(Document.issued_date >= from_date)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            to_date = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+            to_date = to_date + timedelta(days=1)
+            query = query.where(Document.issued_date < to_date)
+        except ValueError:
+            pass
+    
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
+    # Sorting
+    if sort_by:
+        if sort_by == 'student_name':
+            sort_column = Student.first_name
+        elif sort_by == 'status':
+            sort_column = Document.status
+        elif sort_by == 'document_type':
+            sort_column = Document.document_type
+        else:
+            sort_column = Document.issued_date
+        
+        if sort_order == 'asc':
+            query = query.order_by(sort_column.asc())
+        else:
+            query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(Document.issued_date.desc())
+    
     # Apply pagination
     offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size).order_by(Document.issued_date.desc())
+    query = query.offset(offset).limit(page_size)
     
+    # Execute query
     result = await db.execute(query)
     documents = result.scalars().all()
     
-    # Build response items
+    # Build response
     items = []
     for doc in documents:
         student_result = await db.execute(
@@ -87,6 +157,7 @@ async def get_documents(
             "document_type": doc.document_type,
             "file_name": doc.file_name,
             "status": doc.status.value,
+            "category": doc.category,
             "issued_date": doc.issued_date,
             "verified_date": doc.verified_date
         })
@@ -157,46 +228,24 @@ async def get_document_requests(
     result = await db.execute(query)
     requests = result.scalars().all()
     
-    # Build response with student info
-    request_list = []
-    for req in requests:
-        req_dict = {
-            "id": req.id,
-            "student_id": req.student_id,
-            "document_type": req.document_type,
-            "description": req.description,
-            "due_date": req.due_date.isoformat() if req.due_date else None,
-            "status": req.status,
-            "created_at": req.created_at.isoformat()
-        }
-        
-        # Add student info for admin
-        if current_user.role == "admin":
-            student_result = await db.execute(
-                select(Student).where(Student.id == req.student_id)
-            )
-            student = student_result.scalar_one_or_none()
-            if student:
-                req_dict["student_name"] = f"{student.first_name} {student.last_name}"
-                req_dict["admission_no"] = student.admission_no
-        
-        request_list.append(req_dict)
+    # Get total count
+    count_result = await db.execute(select(func.count(DocumentRequest.id)))
+    total = count_result.scalar() or 0
     
-    return {
-        "requests": request_list,
-        "total": len(request_list)
-    }
+    return {"requests": requests, "total": total}
 
 
-@router.post("/requests", status_code=status.HTTP_201_CREATED, response_model=dict)
+@router.post("/requests", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def create_document_request(
     request_data: DocumentRequestCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Admin creates a document request for a student."""
-    # Check if student exists
-    student_result = await db.execute(select(Student).where(Student.id == request_data.student_id))
+    """Create a document request - admin can request documents from students."""
+    # Verify student exists
+    student_result = await db.execute(
+        select(Student).where(Student.id == request_data.student_id)
+    )
     student = student_result.scalar_one_or_none()
     
     if not student:
@@ -205,47 +254,42 @@ async def create_document_request(
             detail="Student not found"
         )
     
-    # Create document request
+    # Create request
     doc_request = DocumentRequest(
         student_id=request_data.student_id,
         document_type=request_data.document_type,
         description=request_data.description,
         due_date=request_data.due_date,
-        created_by=current_user.id,
-        status="pending"
+        status="pending",
+        created_by=current_user.id
     )
+    
     db.add(doc_request)
     await db.commit()
     await db.refresh(doc_request)
     
     # Send email notification to student
-    try:
-        user_result = await db.execute(select(User).where(User.id == student.user_id))
-        user = user_result.scalar_one_or_none()
-        
-        if user:
-            send_document_request_email(
-                user.email, 
-                f"{student.first_name} {student.last_name}", 
-                doc_request.document_type,
-                doc_request.due_date.strftime("%Y-%m-%d") if doc_request.due_date else "",
-                doc_request.description or ""
-            )
-    except Exception as e:
-        print(f"Failed to send email: {e}")
+    user_result = await db.execute(
+        select(User).where(User.id == student.user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    
+    if user:
+        send_document_request_email(
+            user.email,
+            f"{student.first_name} {student.last_name}",
+            request_data.document_type,
+            request_data.due_date.isoformat() if request_data.due_date else "",
+            request_data.description or ""
+        )
     
     return {
         "id": doc_request.id,
-        "student_id": doc_request.student_id,
-        "document_type": doc_request.document_type,
-        "description": doc_request.description,
-        "due_date": doc_request.due_date.isoformat() if doc_request.due_date else None,
-        "status": doc_request.status,
         "message": "Document request created successfully"
     }
 
 
-@router.put("/requests/{request_id}/cancel", response_model=dict)
+@router.put("/requests/{request_id}/cancel")
 async def cancel_document_request(
     request_id: int,
     db: AsyncSession = Depends(get_db),
@@ -348,181 +392,6 @@ async def upload_document(
     }
 
 
-# Student-specific endpoints
-@router.get("/my-documents")
-async def get_my_documents(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get documents for the current student user."""
-    result = await db.execute(
-        select(Student).where(Student.user_id == current_user.id)
-    )
-    student = result.scalar_one_or_none()
-    
-    if not student:
-        return {"documents": [], "message": "No student profile found"}
-    
-    docs_result = await db.execute(
-        select(Document).where(Document.student_id == student.id)
-    )
-    documents = docs_result.scalars().all()
-    
-    return {
-        "documents": [
-            {
-                "id": doc.id,
-                "document_type": doc.document_type,
-                "file_name": doc.file_name,
-                "status": doc.status.value if doc.status else None,
-                "issued_date": doc.issued_date.isoformat() if doc.issued_date else None,
-                "verified_date": doc.verified_date.isoformat() if doc.verified_date else None,
-                "is_college_issued": doc.is_college_issued
-            }
-            for doc in documents
-        ]
-    }
-
-
-@router.post("/upload")
-async def upload_my_document(
-    document_type: str = Form(...),
-    file: UploadFile = File(...),
-    document_id: Optional[int] = Form(None),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Upload a document for the current student user. If document_id is provided, update existing."""
-    # Get student profile
-    result = await db.execute(
-        select(Student).where(Student.user_id == current_user.id)
-    )
-    student = result.scalar_one_or_none()
-    
-    if not student:
-        raise HTTPException(status_code=404, detail="No student profile found")
-    
-    # Save file
-    file_ext = file.filename.split('.')[-1] if '.' in file.filename else 'pdf'
-    unique_filename = f"{student.admission_no}_{document_type}_{uuid.uuid4().hex[:8]}.{file_ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_filename)
-    
-    content = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    document = None
-    if document_id:
-        # Update existing document
-        doc_result = await db.execute(
-            select(Document).where(and_(Document.id == document_id, Document.student_id == student.id))
-        )
-        document = doc_result.scalar_one_or_none()
-        
-        if document:
-            # Delete old file
-            if document.file_path and os.path.exists(document.file_path):
-                try:
-                    os.remove(document.file_path)
-                except:
-                    pass
-            
-            # Update record
-            document.document_type = document_type
-            document.file_name = file.filename
-            document.file_path = file_path
-            document.status = DocumentStatus.PENDING
-            document.issued_date = datetime.now()
-            document.verified_date = None
-            document.notes = None  # Clear rejection notes
-
-    if not document:
-        # Create document record
-        document = Document(
-            student_id=student.id,
-            document_type=document_type,
-            file_name=file.filename,
-            file_path=file_path,
-            status=DocumentStatus.PENDING,
-            issued_date=datetime.now()
-        )
-        db.add(document)
-    
-    # Auto-resolve matching pending requests
-    try:
-        # Match case-insensitively and handle spaces/underscores
-        search_type = document_type.lower().replace('_', ' ').strip()
-        
-        request_query = select(DocumentRequest).where(
-            and_(
-                DocumentRequest.student_id == student.id,
-                DocumentRequest.status == "pending"
-            )
-        )
-        request_result = await db.execute(request_query)
-        pending_requests = request_result.scalars().all()
-        
-        for req in pending_requests:
-            req_type = req.document_type.lower().replace('_', ' ').strip()
-            if req_type == search_type:
-                req.status = "submitted"
-    except Exception as e:
-        print(f"Error resolving request: {e}")
-
-    await db.commit()
-    await db.refresh(document)
-    
-    return {
-        "id": document.id,
-        "document_type": document.document_type,
-        "file_name": document.file_name,
-        "status": document.status.value,
-        "message": "Document uploaded successfully. Pending verification."
-    }
-
-
-@router.get("/my-stats")
-async def get_my_document_stats(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Get document stats for the current student."""
-    result = await db.execute(
-        select(Student).where(Student.user_id == current_user.id)
-    )
-    student = result.scalar_one_or_none()
-    
-    if not student:
-        return {
-            "total": 0,
-            "verified": 0,
-            "pending": 0,
-            "rejected": 0,
-            "requests_pending": 0
-        }
-    
-    docs_result = await db.execute(
-        select(Document).where(Document.student_id == student.id)
-    )
-    documents = docs_result.scalars().all()
-    
-    # Get pending requests
-    requests_result = await db.execute(
-        select(func.count(DocumentRequest.id)).where(
-            and_(DocumentRequest.student_id == student.id, DocumentRequest.status == "pending")
-        )
-    )
-    requests_pending = requests_result.scalar() or 0
-    
-    return {
-        "total": len(documents),
-        "verified": sum(1 for doc in documents if doc.status.value == "verified"),
-        "pending": sum(1 for doc in documents if doc.status.value == "pending"),
-        "rejected": sum(1 for doc in documents if doc.status.value == "rejected"),
-        "requests_pending": requests_pending
-    }
-
-
 @router.get("/stats")
 async def get_document_stats(
     db: AsyncSession = Depends(get_db),
@@ -546,7 +415,7 @@ async def get_document_stats(
     pending = pending_result.scalar() or 0
     
     # Issued this month
-    start_of_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    start_of_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     issued_result = await db.execute(
         select(func.count(Document.id)).where(Document.issued_date >= start_of_month)
     )
@@ -560,176 +429,100 @@ async def get_document_stats(
     }
 
 
-@router.get("/student/{student_id}/download-all")
-async def download_all_student_documents(
-    student_id: int,
+@router.get("/my-documents")
+async def get_my_documents(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Download all documents for a student as a ZIP file."""
-    # Get student
-    student_result = await db.execute(select(Student).where(Student.id == student_id))
+    """Get documents for the current student user."""
+    # Get student profile
+    student_result = await db.execute(
+        select(Student).where(Student.user_id == current_user.id)
+    )
     student = student_result.scalar_one_or_none()
     
     if not student:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student not found"
-        )
+        return {"documents": [], "message": "No student profile found"}
     
-    # Get all documents for student
-    result = await db.execute(
-        select(Document).where(Document.student_id == student_id)
+    # Get documents
+    docs_result = await db.execute(
+        select(Document).where(Document.student_id == student.id)
     )
-    documents = result.scalars().all()
-    
-    if not documents:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No documents found for this student"
-        )
-    
-    # Create ZIP file in memory
-    zip_buffer = io.BytesIO()
-    
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for doc in documents:
-            if os.path.exists(doc.file_path):
-                # Add file to zip with meaningful name
-                file_name = f"{doc.document_type}_{doc.file_name}"
-                zip_file.write(doc.file_path, file_name)
-    
-    zip_buffer.seek(0)
-    
-    # Return ZIP file
-    return StreamingResponse(
-        iter([zip_buffer.getvalue()]),
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename={student.admission_no}_documents.zip"
-        }
-    )
-
-
-@router.post("/bulk-upload", status_code=status.HTTP_201_CREATED, response_model=dict)
-async def bulk_upload_documents(
-    student_ids: str = Form(...),  # Comma-separated IDs
-    document_type: str = Form(...),
-    files: list[UploadFile] = File(...),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Bulk upload documents for multiple students."""
-    student_id_list = [int(sid.strip()) for sid in student_ids.split(",")]
-    
-    created_count = 0
-    for i, student_id in enumerate(student_id_list):
-        if i >= len(files):
-            break
-            
-        # Validate student
-        student_result = await db.execute(select(Student).where(Student.id == student_id))
-        student = student_result.scalar_one_or_none()
-        if not student:
-            continue
-        
-        # Save file
-        file = files[i]
-        file_extension = file.filename.split(".")[-1] if "." in file.filename else "pdf"
-        unique_filename = f"{student.admission_no}_{document_type}_{uuid.uuid4().hex[:8]}.{file_extension}"
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-        
-        # Create document
-        document = Document(
-            student_id=student_id,
-            document_type=document_type,
-            file_name=file.filename,
-            file_path=file_path,
-            file_size=len(content),
-            status=DocumentStatus.PENDING,
-            issued_date=datetime.now(),
-            is_college_issued=True
-        )
-        db.add(document)
-        
-        # Auto-resolve matching pending requests
-        try:
-            search_type = document_type.lower().replace('_', ' ').strip()
-            request_query = select(DocumentRequest).where(
-                and_(
-                    DocumentRequest.student_id == student_id,
-                    DocumentRequest.status == "pending"
-                )
-            )
-            request_result = await db.execute(request_query)
-            pending_requests = request_result.scalars().all()
-            
-            for req in pending_requests:
-                req_type = req.document_type.lower().replace('_', ' ').strip()
-                if req_type == search_type:
-                    req.status = "submitted"
-        except Exception as e:
-            print(f"Error resolving request during bulk upload: {e}")
-            
-        created_count += 1
-    
-    await db.commit()
+    documents = docs_result.scalars().all()
     
     return {
-        "message": f"Documents uploaded for {created_count} students",
-        "created_count": created_count
+        "documents": [
+            {
+                "id": doc.id,
+                "document_type": doc.document_type,
+                "category": doc.category,
+                "file_name": doc.file_name,
+                "status": doc.status.value,
+                "issued_date": doc.issued_date.isoformat() if doc.issued_date else None,
+                "verified_date": doc.verified_date.isoformat() if doc.verified_date else None,
+                "expiry_date": doc.expiry_date.isoformat() if doc.expiry_date else None,
+                "is_required": doc.is_required,
+                "notes": doc.notes
+            }
+            for doc in documents
+        ]
     }
 
 
-@router.get("/{document_id}", response_model=dict)
-async def get_document(
-    document_id: int,
+@router.get("/my-stats")
+async def get_my_document_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get a specific document by ID."""
-    result = await db.execute(select(Document).where(Document.id == document_id))
-    document = result.scalar_one_or_none()
-    
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found"
-        )
-    
-    # Get student
+    """Get document statistics for current student."""
+    # Get student profile
     student_result = await db.execute(
-        select(Student).where(Student.id == document.student_id)
+        select(Student).where(Student.user_id == current_user.id)
     )
     student = student_result.scalar_one_or_none()
     
+    if not student:
+        return {"total": 0, "verified": 0, "pending": 0}
+    
+    # Total documents
+    total_result = await db.execute(
+        select(func.count(Document.id)).where(Document.student_id == student.id)
+    )
+    total = total_result.scalar() or 0
+    
+    # Verified
+    verified_result = await db.execute(
+        select(func.count(Document.id)).where(
+            and_(
+                Document.student_id == student.id,
+                Document.status == DocumentStatus.VERIFIED
+            )
+        )
+    )
+    verified = verified_result.scalar() or 0
+    
+    # Pending
+    pending_result = await db.execute(
+        select(func.count(Document.id)).where(
+            and_(
+                Document.student_id == student.id,
+                Document.status == DocumentStatus.PENDING
+            )
+        )
+    )
+    pending = pending_result.scalar() or 0
+    
     return {
-        "id": document.id,
-        "student": {
-            "id": student.id,
-            "name": f"{student.first_name} {student.last_name}",
-            "admission_no": student.admission_no,
-            "course": student.course
-        } if student else None,
-        "document_type": document.document_type,
-        "file_name": document.file_name,
-        "file_path": document.file_path,
-        "file_size": document.file_size,
-        "status": document.status.value,
-        "issued_date": document.issued_date,
-        "verified_date": document.verified_date,
-        "notes": document.notes
+        "total": total,
+        "verified": verified,
+        "pending": pending
     }
 
 
-@router.put("/{document_id}/verify", response_model=dict)
+@router.put("/{document_id}/verify")
 async def verify_document(
     document_id: int,
-    notes: str = None,
+    notes: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -744,44 +537,45 @@ async def verify_document(
         )
     
     document.status = DocumentStatus.VERIFIED
-    document.verified_date = datetime.utcnow()
+    document.verified_date = datetime.now()
     if notes:
-        document.notes = notes
+        document.notes = (document.notes or "") + f"\nVerified: {notes}"
     
     await db.commit()
     
-    # Log audit trail
+    # Log audit
     await log_audit(db, document.id, current_user.id, "verify")
     
-    # Send email notification to student
-    try:
-        # Get student email
-        student_result = await db.execute(select(Student).where(Student.id == document.student_id))
-        student = student_result.scalar_one_or_none()
-        user_result = await db.execute(select(User).where(User.id == student.user_id))
+    # Send email notification
+    student_result = await db.execute(
+        select(Student).where(Student.id == document.student_id)
+    )
+    student = student_result.scalar_one_or_none()
+    
+    if student:
+        user_result = await db.execute(
+            select(User).where(User.id == student.user_id)
+        )
         user = user_result.scalar_one_or_none()
         
-        if user and student:
+        if user:
             send_document_verified_email(
-                user.email, 
-                f"{student.first_name} {student.last_name}", 
+                user.email,
+                f"{student.first_name} {student.last_name}",
                 document.document_type
             )
-    except Exception as e:
-        print(f"Failed to send email: {e}")
     
     return {
         "id": document.id,
         "status": document.status.value,
-        "verified_date": document.verified_date,
         "message": "Document verified successfully"
     }
 
 
-@router.put("/{document_id}/reject", response_model=dict)
+@router.put("/{document_id}/reject")
 async def reject_document(
     document_id: int,
-    notes: str = None,
+    notes: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -797,29 +591,32 @@ async def reject_document(
     
     document.status = DocumentStatus.REJECTED
     if notes:
-        document.notes = notes
+        document.notes = (document.notes or "") + f"\nRejected: {notes}"
     
     await db.commit()
     
-    # Log audit trail
+    # Log audit
     await log_audit(db, document.id, current_user.id, "reject")
     
-    # Send email notification to student
-    try:
-        student_result = await db.execute(select(Student).where(Student.id == document.student_id))
-        student = student_result.scalar_one_or_none()
-        user_result = await db.execute(select(User).where(User.id == student.user_id))
+    # Send email notification
+    student_result = await db.execute(
+        select(Student).where(Student.id == document.student_id)
+    )
+    student = student_result.scalar_one_or_none()
+    
+    if student:
+        user_result = await db.execute(
+            select(User).where(User.id == student.user_id)
+        )
         user = user_result.scalar_one_or_none()
         
-        if user and student:
+        if user:
             send_document_rejected_email(
-                user.email, 
-                f"{student.first_name} {student.last_name}", 
+                user.email,
+                f"{student.first_name} {student.last_name}",
                 document.document_type,
                 notes or ""
             )
-    except Exception as e:
-        print(f"Failed to send email: {e}")
     
     return {
         "id": document.id,
@@ -828,14 +625,13 @@ async def reject_document(
     }
 
 
-@router.get("/{document_id}/download")
-async def download_document(
+@router.get("/{document_id}")
+async def get_document(
     document_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Download a document file."""
-    # Get document
+    """Get a specific document."""
     result = await db.execute(select(Document).where(Document.id == document_id))
     document = result.scalar_one_or_none()
     
@@ -845,18 +641,55 @@ async def download_document(
             detail="Document not found"
         )
     
-    # Check permission - admin can download any, students can only download their own
-    if current_user.role == "student":
-        # Get student's own document
-        student_result = await db.execute(
-            select(Student).where(Student.user_id == current_user.id)
+    # Log audit
+    await log_audit(db, document.id, current_user.id, "view")
+    
+    # Get student
+    student_result = await db.execute(
+        select(Student).where(Student.id == document.student_id)
+    )
+    student = student_result.scalar_one_or_none()
+    
+    return {
+        "id": document.id,
+        "student": {
+            "id": student.id,
+            "name": f"{student.first_name} {student.last_name}",
+            "admission_no": student.admission_no
+        } if student else None,
+        "document_type": document.document_type,
+        "category": document.category,
+        "file_name": document.file_name,
+        "file_path": document.file_path,
+        "file_size": document.file_size,
+        "status": document.status.value,
+        "issued_date": document.issued_date,
+        "verified_date": document.verified_date,
+        "expiry_date": document.expiry_date,
+        "is_required": document.is_required,
+        "is_college_issued": document.is_college_issued,
+        "notes": document.notes
+    }
+
+
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Download a document."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    document = result.scalar_one_or_none()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
         )
-        student = student_result.scalar_one_or_none()
-        if not student or document.student_id != student.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to download this document"
-            )
+    
+    # Log audit
+    await log_audit(db, document.id, current_user.id, "download")
     
     # Check if file exists
     if not os.path.exists(document.file_path):
@@ -866,40 +699,53 @@ async def download_document(
         )
     
     return FileResponse(
-        path=document.file_path,
-        filename=document.file_name,
-        media_type="application/octet-stream"
+        document.file_path,
+        media_type="application/octet-stream",
+        filename=document.file_name
     )
 
 
-@router.get("/{document_id}/history")
-async def get_document_history(
+@router.put("/{document_id}")
+async def update_document(
     document_id: int,
+    document_data: DocumentUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get audit trail for a specific document."""
-    query = select(DocumentAuditLog).where(DocumentAuditLog.document_id == document_id).order_by(DocumentAuditLog.created_at.desc())
-    result = await db.execute(query)
-    logs = result.scalars().all()
+    """Update a document."""
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    document = result.scalar_one_or_none()
     
-    history = []
-    for log in logs:
-        user_result = await db.execute(select(User).where(User.id == log.user_id))
-        user = user_result.scalar_one_or_none()
-        
-        history.append({
-            "id": log.id,
-            "action": log.action,
-            "user": user.email if user else "Unknown",
-            "timestamp": log.created_at,
-            "ip_address": log.ip_address
-        })
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
     
-    return {"history": history}
+    # Update fields
+    if document_data.status is not None:
+        document.status = document_data.status
+    if document_data.notes is not None:
+        document.notes = document_data.notes
+    if document_data.expiry_date is not None:
+        document.expiry_date = document_data.expiry_date
+    if document_data.is_required is not None:
+        document.is_required = document_data.is_required
+    if document_data.category is not None:
+        document.category = document_data.category
+    
+    await db.commit()
+    await db.refresh(document)
+    
+    return {
+        "id": document.id,
+        "document_type": document.document_type,
+        "status": document.status.value,
+        "message": "Document updated successfully"
+    }
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{document_id}")
 async def delete_document(
     document_id: int,
     db: AsyncSession = Depends(get_db),
@@ -915,24 +761,218 @@ async def delete_document(
             detail="Document not found"
         )
     
-    # Permission check: Students can only delete their own documents
-    if current_user.role == "student":
-        student_result = await db.execute(select(Student).where(Student.user_id == current_user.id))
-        student = student_result.scalar_one_or_none()
-        if not student or document.student_id != student.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to delete this document"
-            )
-
     # Delete file if exists
     if document.file_path and os.path.exists(document.file_path):
         try:
             os.remove(document.file_path)
-        except Exception as e:
-            print(f"Error deleting file: {e}")
+        except:
+            pass
     
-    db.delete(document)
+    # Log audit before deletion
+    await log_audit(db, document.id, current_user.id, "delete")
+    
+    await db.delete(document)
     await db.commit()
     
-    return None
+    return {"message": "Document deleted successfully"}
+
+
+@router.get("/{document_id}/history")
+async def get_document_history(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get document audit history."""
+    result = await db.execute(
+        select(DocumentAuditLog)
+        .where(DocumentAuditLog.document_id == document_id)
+        .order_by(DocumentAuditLog.created_at.desc())
+    )
+    logs = result.scalars().all()
+    
+    history = []
+    for log in logs:
+        user_result = await db.execute(select(User).where(User.id == log.user_id))
+        user = user_result.scalar_one_or_none()
+        
+        history.append({
+            "id": log.id,
+            "action": log.action,
+            "user": user.email if user else "Unknown",
+            "ip_address": log.ip_address,
+            "created_at": log.created_at.isoformat() if log.created_at else None
+        })
+    
+    return {"history": history}
+
+
+# Student-specific upload endpoint
+@router.post("/upload")
+async def upload_my_document(
+    document_type: str = Form(...),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Student uploads their own document."""
+    # Get student profile
+    student_result = await db.execute(
+        select(Student).where(Student.user_id == current_user.id)
+    )
+    student = student_result.scalar_one_or_none()
+    
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student profile not found"
+        )
+    
+    # Save file
+    file_extension = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+    unique_filename = f"{student.admission_no}_{document_type}_{uuid.uuid4().hex[:8]}.{file_extension}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # Create document
+    document = Document(
+        student_id=student.id,
+        document_type=document_type,
+        category="other",
+        file_name=file.filename,
+        file_path=file_path,
+        file_size=len(content),
+        status=DocumentStatus.PENDING,
+        issued_date=datetime.now(),
+        is_college_issued=False
+    )
+    
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+    
+    # Log audit
+    await log_audit(db, document.id, current_user.id, "upload")
+    
+    return {
+        "id": document.id,
+        "message": "Document uploaded successfully"
+    }
+
+
+# Bulk upload endpoint
+@router.post("/bulk-upload")
+async def bulk_upload_documents(
+    student_id: int = Form(...),
+    document_type: str = Form(...),
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Bulk upload multiple documents for a student."""
+    # Validate student
+    student_result = await db.execute(select(Student).where(Student.id == student_id))
+    student = student_result.scalar_one_or_none()
+    
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
+    
+    uploaded = []
+    errors = []
+    
+    for file in files:
+        try:
+            # Save file
+            file_extension = file.filename.split(".")[-1] if "." in file.filename else "pdf"
+            unique_filename = f"{student.admission_no}_{document_type}_{uuid.uuid4().hex[:8]}.{file_extension}"
+            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+            
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+            
+            # Create document
+            document = Document(
+                student_id=student_id,
+                document_type=document_type,
+                category="other",
+                file_name=file.filename,
+                file_path=file_path,
+                file_size=len(content),
+                status=DocumentStatus.VERIFIED if current_user.role == "admin" else DocumentStatus.PENDING,
+                issued_date=datetime.now(),
+                is_college_issued=True
+            )
+            
+            db.add(document)
+            uploaded.append(file.filename)
+            
+        except Exception as e:
+            errors.append(f"{file.filename}: {str(e)}")
+    
+    await db.commit()
+    
+    return {
+        "uploaded": uploaded,
+        "errors": errors,
+        "message": f"Uploaded {len(uploaded)} documents"
+    }
+
+
+# Download all documents for a student
+@router.get("/student/{student_id}/download-all")
+async def download_all_student_documents(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Download all documents for a student as ZIP."""
+    # Get student
+    student_result = await db.execute(select(Student).where(Student.id == student_id))
+    student = student_result.scalar_one_or_none()
+    
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
+    
+    # Get all documents
+    docs_result = await db.execute(
+        select(Document).where(Document.student_id == student_id)
+    )
+    documents = docs_result.scalars().all()
+    
+    if not documents:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No documents found for student"
+        )
+    
+    # Create ZIP in memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for doc in documents:
+            if os.path.exists(doc.file_path):
+                zip_file.write(doc.file_path, doc.file_name)
+    
+    zip_buffer.seek(0)
+    
+    # Log audit
+    for doc in documents:
+        await log_audit(db, doc.id, current_user.id, "download_all")
+    
+    return StreamingResponse(
+        io.BytesIO(zip_buffer.read()),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={student.admission_no}_documents.zip"
+        }
+    )

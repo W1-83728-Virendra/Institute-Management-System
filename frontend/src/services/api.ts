@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'http://localhost:8001/api';
 
 const getAuthHeader = () => {
   const token = localStorage.getItem('access_token');
@@ -104,12 +104,31 @@ export const feesAPI = {
 };
 
 // Documents API
+// Extended interface to include all filter and sort parameters
+// Use case: Admin needs to filter and sort documents by various criteria
+export interface DocumentFilters {
+  page?: number;
+  page_size?: number;
+  search?: string;              // Search by student name or admission number
+  status?: string;               // Filter by status: pending, verified, rejected
+  document_type?: string;        // Filter by document type
+  category?: string;            // Filter by category
+  date_from?: string;           // Filter documents from this date (ISO string)
+  date_to?: string;             // Filter documents until this date (ISO string)
+  sort_by?: 'issued_date' | 'student_name' | 'status' | 'document_type';  // Field to sort by
+  sort_order?: 'asc' | 'desc';  // Sort direction
+}
+
 export const documentsAPI = {
+  // Get all documents with advanced filtering and sorting
+  // Use case: Admin views document list with applied filters
+  getAll: (params?: DocumentFilters) =>
+    api.get('/documents', { params, headers: getAuthHeader() }),
+
+  // Get document statistics for dashboard
+  // Use case: Admin views document stats on dashboard
   getStats: () =>
     api.get('/documents/stats', { headers: getAuthHeader() }),
-
-  getAll: (params?: any) =>
-    api.get('/documents', { params, headers: getAuthHeader() }),
 
   getById: (id: number) =>
     api.get(`/documents/${id}`, { headers: getAuthHeader() }),

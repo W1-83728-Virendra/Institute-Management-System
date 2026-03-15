@@ -2,20 +2,23 @@ import { useEffect, useState, useRef } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Grid, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton
+  DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton, InputAdornment,
+  FormControl, InputLabel, Select, OutlinedInput, TableSortLabel
 } from '@mui/material';
-import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail } from '@mui/icons-material';
+import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail, Search, FilterList, Clear } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { fetchDocuments, fetchDocumentStats, uploadDocument, verifyDocument, rejectDocument } from '../store/slices/documentsSlice';
+import { fetchDocuments, fetchDocumentStats, uploadDocument, verifyDocument, rejectDocument, setFilters, clearFilters } from '../store/slices/documentsSlice';
 import { fetchStudents } from '../store/slices/studentsSlice';
 import { documentsAPI, studentsAPI } from '../services/api';
 
 const Documents = () => {
   const dispatch = useAppDispatch();
-  const { documents, total, loading } = useAppSelector((state: any) => state.documents);
+  // Get documents, filters, and loading state from Redux store
+  const { documents, total, loading, filters: reduxFilters, page, total_pages } = useAppSelector((state: any) => state.documents);
   const { stats } = useAppSelector((state: any) => state.documents);
   const { students: studentList } = useAppSelector((state: any) => state.students);
 
+  // Local state for UI dialogs
   const [openUpload, setOpenUpload] = useState(false);
   const [openVerify, setOpenVerify] = useState(false);
   const [openPreview, setOpenPreview] = useState(false);
@@ -33,14 +36,20 @@ const Documents = () => {
   const [requestData, setRequestData] = useState({ student_id: '', document_type: '', description: '', due_date: '' });
   const [documentTypes, setDocumentTypes] = useState<{ value: string; label: string }[]>([]);
 
-  const [filters, setFilters] = useState({ category: '', status: '', document_type: '' });
+  // Local state for search input (debounced)
+  const [searchInput, setSearchInput] = useState(reduxFilters.search);
 
+  // --------------------------------------------------------------------------
+  // Fetch documents when filters change
+  // Use case: Refresh document list when user applies or changes filters
+  // --------------------------------------------------------------------------
   useEffect(() => {
-    dispatch(fetchDocuments(filters));
+    // Fetch documents with current filters from Redux store
+    dispatch(fetchDocuments(reduxFilters));
     dispatch(fetchDocumentStats());
     dispatch(fetchStudents({ page_size: 1000 }));
 
-    // Fetch document types
+    // Fetch document types for filter dropdown
     const fetchTypes = async () => {
       try {
         const res = await documentsAPI.getTypes();
@@ -50,10 +59,68 @@ const Documents = () => {
       }
     };
     fetchTypes();
-  }, [dispatch, filters]);
+  }, [dispatch, reduxFilters]); // Include reduxFilters in dependency array
+
+  // --------------------------------------------------------------------------
+  // Handle filter changes
+  // Use case: Update Redux filter state when user changes filter options
+  // --------------------------------------------------------------------------
+  const handleFilterChange = (filterName: string, value: string) => {
+    dispatch(setFilters({ [filterName]: value }));
+  };
+
+  // --------------------------------------------------------------------------
+  // Handle search input with debounce
+  // Use case: Search by student name or admission number
+  // --------------------------------------------------------------------------
+  // const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   const value = e.target.value;
+  //   setSearchInput(value);
+  //   // Debounce search - update filter after user stops typing
+  //   const timeoutId = setTimeout(() => {
+  //     dispatch(setFilters({ search: value }));
+  //   }, 500);
+  //   return () => clearTimeout(timeoutId);
+  // };
+
+  // Fix: Move debounce to useEffect
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      dispatch(setFilters({ search: searchInput }));
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [searchInput]);
+
+  // Simplify handler to just update local state
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+  };
+
+
+  // --------------------------------------------------------------------------
+  // Handle sort change
+  // Use case: Change sort field and order
+  // --------------------------------------------------------------------------
+  const handleSortChange = (field: string) => {
+    // If clicking the same field, toggle order; otherwise set to descending
+    if (reduxFilters.sort_by === field) {
+      dispatch(setFilters({ sort_order: reduxFilters.sort_order === 'asc' ? 'desc' : 'asc' }));
+    } else {
+      dispatch(setFilters({ sort_by: field, sort_order: 'desc' }));
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // Clear all filters
+  // Use case: Reset all filters to default values
+  // --------------------------------------------------------------------------
+  const handleClearFilters = () => {
+    dispatch(clearFilters());
+    setSearchInput('');
+  };
 
   const handleCategoryChange = (e: any) => {
-    setFilters({ ...filters, category: e.target.value });
+    dispatch(setFilters({ category: e.target.value }));
   };
 
   const handleDownloadAll = async (studentId: number, studentName: string) => {
@@ -94,7 +161,7 @@ const Documents = () => {
         setSnackbar({ open: true, message: 'Bulk documents uploaded successfully', severity: 'success' });
         setOpenUpload(false);
         setUploadData({ student_id: '', document_type: '', description: '' });
-        dispatch(fetchDocuments(filters));
+        dispatch(fetchDocuments(reduxFilters));
       } catch (error: any) {
         setSnackbar({ open: true, message: error.response?.data?.detail || 'Bulk upload failed', severity: 'error' });
       }
@@ -111,7 +178,7 @@ const Documents = () => {
         setOpenUpload(false);
         setUploadData({ student_id: '', document_type: '', description: '' });
         if (fileInputRef.current) fileInputRef.current.value = '';
-        dispatch(fetchDocuments(filters));
+        dispatch(fetchDocuments(reduxFilters)); 
         dispatch(fetchDocumentStats());
       } catch (error: any) {
         const errorMsg = typeof error === 'string' ? error : (error.response?.data?.detail || error.message || 'Upload failed');
@@ -300,35 +367,146 @@ const Documents = () => {
       </Grid>
 
       <Card sx={{ mb: 3 }}>
-        <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <Typography variant="subtitle1" fontWeight="bold">Filters:</Typography>
-          <TextField
-            select
-            size="small"
-            label="Category"
-            value={filters.category}
-            onChange={handleCategoryChange}
-            sx={{ minWidth: 150 }}
-          >
-            <MenuItem value="">All Categories</MenuItem>
-            <MenuItem value="academic">Academic</MenuItem>
-            <MenuItem value="id_proof">ID Proof</MenuItem>
-            <MenuItem value="certificate">Certificate</MenuItem>
-            <MenuItem value="other">Other</MenuItem>
-          </TextField>
-          <TextField
-            select
-            size="small"
-            label="Status"
-            value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            sx={{ minWidth: 150 }}
-          >
-            <MenuItem value="">All Statuses</MenuItem>
-            <MenuItem value="pending">Pending</MenuItem>
-            <MenuItem value="verified">Verified</MenuItem>
-            <MenuItem value="rejected">Rejected</MenuItem>
-          </TextField>
+        <CardContent>
+          {/* --------------------------------------------------------------------------
+          Enhanced Filter Section
+          Use case: Admin can filter documents by multiple criteria including:
+          - Search by student name or admission number
+          - Status (pending, verified, rejected)
+          - Document type
+          - Category
+          - Date range (from/to)
+          - Sort by various fields
+          -------------------------------------------------------------------------- */}
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Typography variant="subtitle1" fontWeight="bold">Filters:</Typography>
+            
+            {/* Search Input - Search by student name or admission number */}
+            <TextField
+              size="small"
+              placeholder="Search student name or ID..."
+              value={searchInput}
+              onChange={handleSearchChange}
+              sx={{ minWidth: 220 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            
+            {/* Status Filter */}
+            <TextField
+              select
+              size="small"
+              label="Status"
+              value={reduxFilters.status}
+              onChange={(e) => handleFilterChange('status', e.target.value)}
+              sx={{ minWidth: 140 }}
+            >
+              <MenuItem value="">All Statuses</MenuItem>
+              <MenuItem value="pending">Pending</MenuItem>
+              <MenuItem value="verified">Verified</MenuItem>
+              <MenuItem value="rejected">Rejected</MenuItem>
+            </TextField>
+            
+            {/* Document Type Filter */}
+            <TextField
+              select
+              size="small"
+              label="Document Type"
+              value={reduxFilters.document_type}
+              onChange={(e) => handleFilterChange('document_type', e.target.value)}
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="">All Types</MenuItem>
+              {documentTypes.map((type) => (
+                <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>
+              ))}
+            </TextField>
+            
+            {/* Category Filter */}
+            <TextField
+              select
+              size="small"
+              label="Category"
+              value={reduxFilters.category}
+              onChange={(e) => handleFilterChange('category', e.target.value)}
+              sx={{ minWidth: 140 }}
+            >
+              <MenuItem value="">All Categories</MenuItem>
+              <MenuItem value="academic">Academic</MenuItem>
+              <MenuItem value="id_proof">ID Proof</MenuItem>
+              <MenuItem value="certificate">Certificate</MenuItem>
+              <MenuItem value="other">Other</MenuItem>
+            </TextField>
+          </Box>
+          
+          {/* Date Range and Sort Row */}
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mt: 2 }}>
+            {/* Date From */}
+            <TextField
+              size="small"
+              label="Date From"
+              type="date"
+              value={reduxFilters.date_from}
+              onChange={(e) => handleFilterChange('date_from', e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 150 }}
+            />
+            
+            {/* Date To */}
+            <TextField
+              size="small"
+              label="Date To"
+              type="date"
+              value={reduxFilters.date_to}
+              onChange={(e) => handleFilterChange('date_to', e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 150 }}
+            />
+            
+            {/* Sort By */}
+            <TextField
+              select
+              size="small"
+              label="Sort By"
+              value={reduxFilters.sort_by}
+              onChange={(e) => handleFilterChange('sort_by', e.target.value)}
+              sx={{ minWidth: 150 }}
+            >
+              <MenuItem value="issued_date">Date</MenuItem>
+              <MenuItem value="student_name">Student Name</MenuItem>
+              <MenuItem value="status">Status</MenuItem>
+              <MenuItem value="document_type">Document Type</MenuItem>
+            </TextField>
+            
+            {/* Sort Order */}
+            <TextField
+              select
+              size="small"
+              label="Order"
+              value={reduxFilters.sort_order}
+              onChange={(e) => handleFilterChange('sort_order', e.target.value)}
+              sx={{ minWidth: 100 }}
+            >
+              <MenuItem value="desc">↓ Desc</MenuItem>
+              <MenuItem value="asc">↑ Asc</MenuItem>
+            </TextField>
+            
+            {/* Clear Filters Button */}
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Clear />}
+              onClick={handleClearFilters}
+              sx={{ ml: 'auto' }}
+            >
+              Clear Filters
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
@@ -341,13 +519,49 @@ const Documents = () => {
             <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: '#f9fafb' }}>
-                  <TableCell>Student</TableCell>
-                  <TableCell>Document Type</TableCell>
+                  {/* Sortable Student Column */}
+                  <TableCell>
+                    <TableSortLabel
+                      active={reduxFilters.sort_by === 'student_name'}
+                      direction={reduxFilters.sort_by === 'student_name' ? reduxFilters.sort_order as 'asc' | 'desc' : 'desc'}
+                      onClick={() => handleSortChange('student_name')}
+                    >
+                      Student
+                    </TableSortLabel>
+                  </TableCell>
+                  {/* Sortable Document Type Column */}
+                  <TableCell>
+                    <TableSortLabel
+                      active={reduxFilters.sort_by === 'document_type'}
+                      direction={reduxFilters.sort_by === 'document_type' ? reduxFilters.sort_order as 'asc' | 'desc' : 'desc'}
+                      onClick={() => handleSortChange('document_type')}
+                    >
+                      Document Type
+                    </TableSortLabel>
+                  </TableCell>
                   <TableCell>File</TableCell>
-                  <TableCell>Issued Date</TableCell>
+                  {/* Sortable Issued Date Column */}
+                  <TableCell>
+                    <TableSortLabel
+                      active={reduxFilters.sort_by === 'issued_date'}
+                      direction={reduxFilters.sort_by === 'issued_date' ? reduxFilters.sort_order as 'asc' | 'desc' : 'desc'}
+                      onClick={() => handleSortChange('issued_date')}
+                    >
+                      Issued Date
+                    </TableSortLabel>
+                  </TableCell>
                   <TableCell>Expiry Date</TableCell>
                   <TableCell>Required</TableCell>
-                  <TableCell>Status</TableCell>
+                  {/* Sortable Status Column */}
+                  <TableCell>
+                    <TableSortLabel
+                      active={reduxFilters.sort_by === 'status'}
+                      direction={reduxFilters.sort_by === 'status' ? reduxFilters.sort_order as 'asc' | 'desc' : 'desc'}
+                      onClick={() => handleSortChange('status')}
+                    >
+                      Status
+                    </TableSortLabel>
+                  </TableCell>
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
