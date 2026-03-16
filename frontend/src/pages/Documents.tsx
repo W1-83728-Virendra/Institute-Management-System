@@ -3,7 +3,7 @@ import {
   Box, Card, CardContent, Typography, Button, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Grid, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton, InputAdornment,
-  FormControl, InputLabel, Select, OutlinedInput, TableSortLabel
+  FormControl, InputLabel, Select, OutlinedInput, TableSortLabel, useTheme, useMediaQuery, Paper
 } from '@mui/material';
 import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail, Search, FilterList, Clear } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -13,6 +13,11 @@ import { documentsAPI, studentsAPI } from '../services/api';
 
 const Documents = () => {
   const dispatch = useAppDispatch();
+  
+  // Responsive breakpoints - detect mobile/tablet screens
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
   // Get documents, filters, and loading state from Redux store
   const { documents, total, loading, filters: reduxFilters, page, total_pages } = useAppSelector((state: any) => state.documents);
   const { stats } = useAppSelector((state: any) => state.documents);
@@ -378,7 +383,16 @@ const Documents = () => {
           - Date range (from/to)
           - Sort by various fields
           -------------------------------------------------------------------------- */}
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 2, 
+            alignItems: 'center', 
+            flexWrap: 'wrap',
+            // Stack on mobile for better usability
+            flexDirection: { xs: 'column', sm: 'row' },
+            width: '100%',
+            '& .MuiTextField-root': { width: { xs: '100%', sm: 'auto' } }
+          }}>
             <Typography variant="subtitle1" fontWeight="bold">Filters:</Typography>
             
             {/* Search Input - Search by student name or admission number */}
@@ -445,7 +459,17 @@ const Documents = () => {
           </Box>
           
           {/* Date Range and Sort Row */}
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mt: 2 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 2, 
+            alignItems: 'center', 
+            flexWrap: 'wrap', 
+            mt: 2,
+            // Stack on mobile for better usability
+            flexDirection: { xs: 'column', sm: 'row' },
+            width: '100%',
+            '& .MuiTextField-root': { width: { xs: '100%', sm: 'auto' } }
+          }}>
             {/* Date From */}
             <TextField
               size="small"
@@ -515,7 +539,14 @@ const Documents = () => {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6">Recently Issued Documents</Typography>
           </Box>
-          <TableContainer>
+          <TableContainer 
+            component={Paper}
+            sx={{ 
+              // Enable horizontal scroll on mobile to prevent layout breaking
+              overflowX: 'auto',
+              maxWidth: '100%'
+            }}
+          >
             <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: '#f9fafb' }}>

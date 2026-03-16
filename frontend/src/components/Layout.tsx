@@ -17,6 +17,8 @@ import {
   MenuItem,
   Badge,
   Divider,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -53,9 +55,16 @@ const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAppSelector((state) => state.auth);
+  
+  // Mobile drawer state
   const [mobileOpen, setMobileOpen] = useState(false);
+  // User menu state
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-
+  
+  // Use MUI's useTheme and useMediaQuery for responsive detection
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
   const menuItems = user?.role === 'admin' ? adminMenuItems : studentMenuItems;
   const isStudent = user?.role === 'student';
   const isAdmin = user?.role === 'admin';
@@ -64,8 +73,17 @@ const Layout = () => {
   const studentName = user?.email?.split('@')[0] || 'Student';
   const studentInitials = studentName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
+  // Toggle mobile drawer open/close
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
+  };
+
+  // Close mobile drawer when navigating (mobile UX improvement)
+  const handleNavClick = (path: string) => {
+    navigate(path);
+    if (isMobile) {
+      setMobileOpen(false);
+    }
   };
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
@@ -83,6 +101,7 @@ const Layout = () => {
 
   const drawer = (
     <Box sx={{ bgcolor: '#1f2937', minHeight: '100vh', color: 'white', display: 'flex', flexDirection: 'column' }}>
+      {/* Logo and Portal Type Header */}
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1.5, borderBottom: '1px solid #374151' }}>
         <Avatar sx={{ bgcolor: '#667eea', fontSize: 24 }}>🎓</Avatar>
         <Box>
@@ -92,11 +111,13 @@ const Layout = () => {
           </Typography>
         </Box>
       </Box>
+      
+      {/* Navigation Menu Items */}
       <List sx={{ py: 2 }}>
         {menuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
-              onClick={() => navigate(item.path)}
+              onClick={() => handleNavClick(item.path)}
               selected={location.pathname === item.path}
               sx={{
                 mx: 1,
@@ -119,7 +140,7 @@ const Layout = () => {
         {isAdmin && (
           <ListItem disablePadding>
             <ListItemButton
-              onClick={() => navigate('/admin/settings')}
+              onClick={() => handleNavClick('/admin/settings')}
               sx={{
                 mx: 1,
                 borderRadius: 1,
@@ -132,6 +153,8 @@ const Layout = () => {
           </ListItem>
         )}
       </List>
+      
+      {/* Logout Button at Bottom */}
       <Box sx={{ mt: 'auto', p: 2, borderTop: '1px solid #374151' }}>
         <ListItemButton
           onClick={handleLogout}
@@ -232,7 +255,8 @@ const Layout = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
+          // Responsive padding: smaller on mobile, larger on desktop
+          p: { xs: 1, sm: 2, md: 3 },
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           mt: 8,
           bgcolor: '#f3f4f6',

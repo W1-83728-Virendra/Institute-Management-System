@@ -1,3 +1,7 @@
+/* ==========================================================================
+   Global Reset and Base Styles
+   ========================================================================== */
+
 * {
   margin: 0;
   padding: 0;
@@ -11,9 +15,35 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
+}
+
+/* Ensure root container doesn't overflow */
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* ==========================================================================
+   Responsive Utilities
+   ========================================================================== */
+
+/* Hide scrollbar but allow scrolling on mobile */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
 }
