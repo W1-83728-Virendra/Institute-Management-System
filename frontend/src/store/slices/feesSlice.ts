@@ -81,7 +81,21 @@ export const fetchFeeOverview = createAsyncThunk(
 
 export const fetchFees = createAsyncThunk(
   'fees/fetchAll',
-  async (params: { page?: number; status?: string; course?: string } = {}, { rejectWithValue }) => {
+  // ========================================================================
+  // Extended filter parameters for fees table
+  // ========================================================================
+  async (params: {
+    page?: number;
+    status?: string;
+    course?: string;
+    // New filter parameters
+    fee_type?: string;
+    start_date?: string;
+    end_date?: string;
+    search?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  } = {}, { rejectWithValue }) => {
     try {
       const response = await feesAPI.getAll(params);
       return response.data;

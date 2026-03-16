@@ -331,11 +331,36 @@ export const studentsAPI = {
 
 // ==================== Fees API ====================
 export const feesAPI = {
+  // Get all fees with filters
   getAll: (params?: any) => api.get('/fees', { params }),
+  
+  // Get single fee
   getById: (id: number) => api.get(`/fees/${id}`),
+  
+  // Create single fee
   create: (data: any) => api.post('/fees', data),
+  
+  // Update fee
   update: (id: number, data: any) => api.put(`/fees/${id}`, data),
+  
+  // Delete fee
   delete: (id: number) => api.delete(`/fees/${id}`),
+  
+  // ========================================================================
+  // NEW METHODS - Dashboard and Payment
+  // ========================================================================
+  
+  // Get dashboard statistics
+  getDashboard: () => api.get('/fees/dashboard'),
+  
+  // Get fee overview by course
+  getOverviewByCourse: () => api.get('/fees/overview-by-course'),
+  
+  // Process payment for a fee
+  pay: (id: number, data: any) => api.post(`/fees/${id}/pay`, data),
+  
+  // Bulk create fees for a course
+  bulkCreate: (data: any) => api.post('/fees/bulk-create', data),
 };
 
 // ==================== Student Fees API ====================

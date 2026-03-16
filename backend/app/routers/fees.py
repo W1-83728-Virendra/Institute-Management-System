@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
+from sqlalchemy.orm import selectinload
 from typing import Optional
 from datetime import datetime, timedelta
 import uuid
@@ -135,13 +136,24 @@ async def get_fees(
     student_id: Optional[int] = None,
     status: Optional[str] = None,
     course: Optional[str] = None,
+    # ========================================================================
+    # NEW FILTER PARAMETERS - Added for enhanced filtering
+    # ========================================================================
+    fee_type: Optional[str] = Query(None, description="Filter by fee type (e.g., Tuition Fee, Exam Fee)"),
+    start_date: Optional[str] = Query(None, description="Filter by due date start (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Filter by due date end (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="Search by student name or admission number"),
+    sort_by: Optional[str] = Query("due_date", description="Sort by field (due_date, amount, status, created_at)"),
+    sort_order: Optional[str] = Query("desc", description="Sort order (asc or desc)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all fees with pagination and filters."""
+    """Get all fees with pagination and advanced filtering."""
     query = select(Fee).join(Student)
     
-    # Apply filters
+    # ========================================================================
+    # EXISTING FILTERS
+    # ========================================================================
     if student_id:
         query = query.where(Fee.student_id == student_id)
     if status:
@@ -150,25 +162,80 @@ async def get_fees(
         # Filter by Fee.course (stored course name) or Student.course
         query = query.where((Fee.course == course) | (Student.course == course))
     
-    # Get total count
+    # ========================================================================
+    # NEW FILTERS - Date range, fee type, and search
+    # ========================================================================
+    if fee_type:
+        query = query.where(Fee.fee_type == fee_type)
+    
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.where(Fee.due_date >= start)
+        except ValueError:
+            pass  # Ignore invalid date format
+    
+    if end_date:
+        try:
+            end = datetime.strptime(end_date, "%Y-%m-%d")
+            # Add one day to include the end date
+            end = end + timedelta(days=1)
+            query = query.where(Fee.due_date < end)
+        except ValueError:
+            pass  # Ignore invalid date format
+    
+    if search:
+        # Search by student name or admission number
+        search_pattern = f"%{search}%"
+        query = query.where(
+            (Student.first_name.ilike(search_pattern)) |
+            (Student.last_name.ilike(search_pattern)) |
+            (Student.admission_no.ilike(search_pattern))
+        )
+    
+    # ========================================================================
+    # COUNT QUERY - Get total count for pagination metadata (after all filters)
+    # ========================================================================
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
-    total = total_result.scalar()
+    total = total_result.scalar() or 0
     
-    # Apply pagination
+    # ========================================================================
+    # SORTING
+    # ========================================================================
+    # Map sort_by parameter to actual column names
+    sort_columns = {
+        "due_date": Fee.due_date,
+        "amount": Fee.amount,
+        "status": Fee.status,
+        "created_at": Fee.created_at,
+        "fee_type": Fee.fee_type,
+    }
+    sort_column = sort_columns.get(sort_by, Fee.due_date)
+    
+    if sort_order == "asc":
+        query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(sort_column.desc())
+    
+    # ========================================================================
+    # PAGINATION - Apply before execution
+    # ========================================================================
     offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size).order_by(Fee.due_date.desc())
+    query = query.offset(offset).limit(page_size)
+    
+    # ========================================================================
+    # EAGER LOAD - Fix N+1 query by loading student with each fee
+    # ========================================================================
+    query = query.options(selectinload(Fee.student))
     
     result = await db.execute(query)
     fees = result.scalars().all()
     
-    # Build response items
+    # Build response items - student is already loaded, no additional query needed
     items = []
     for fee in fees:
-        student_result = await db.execute(
-            select(Student).where(Student.id == fee.student_id)
-        )
-        student = student_result.scalar_one_or_none()
+        student = fee.student  # Use eager-loaded relationship
         
         items.append({
             "id": fee.id,
