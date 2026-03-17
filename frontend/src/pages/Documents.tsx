@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Grid, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton
+  DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton, Autocomplete
 } from '@mui/material';
 import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -30,7 +30,7 @@ const Documents = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadData, setUploadData] = useState({ student_id: '', document_type: '', description: '' });
-  const [requestData, setRequestData] = useState({ student_id: '', document_type: '', description: '', due_date: '' });
+  const [requestData, setRequestData] = useState({ student_id: '', document_types: [] as string[], description: '', due_date: '' });
   const [documentTypes, setDocumentTypes] = useState<{ value: string; label: string }[]>([]);
 
   const [filters, setFilters] = useState({ category: '', status: '', document_type: '' });
@@ -153,23 +153,36 @@ const Documents = () => {
   };
 
   const handleRequestSubmit = async () => {
-    if (!requestData.student_id || !requestData.document_type) {
-      setSnackbar({ open: true, message: 'Please fill required fields', severity: 'error' });
+    if (!requestData.student_id || requestData.document_types.length === 0) {
+      setSnackbar({ open: true, message: 'Please select a student and at least one document type', severity: 'error' });
       return;
     }
 
     try {
-      const payload = {
-        student_id: Number(requestData.student_id),
-        document_type: requestData.document_type,
-        description: requestData.description || null,
-        due_date: requestData.due_date ? new Date(requestData.due_date).toISOString() : null
-      };
-
-      await documentsAPI.createDocumentRequest(payload);
-      setSnackbar({ open: true, message: 'Document request sent to student', severity: 'success' });
+      // Check if single or bulk request
+      if (requestData.document_types.length === 1) {
+        // Single request - use existing endpoint
+        const payload = {
+          student_id: Number(requestData.student_id),
+          document_type: requestData.document_types[0],
+          description: requestData.description || null,
+          due_date: requestData.due_date ? new Date(requestData.due_date).toISOString() : null
+        };
+        await documentsAPI.createDocumentRequest(payload);
+        setSnackbar({ open: true, message: 'Document request sent to student', severity: 'success' });
+      } else {
+        // Bulk request - use new endpoint
+        const payload = {
+          student_id: Number(requestData.student_id),
+          document_types: requestData.document_types,
+          description: requestData.description || null,
+          due_date: requestData.due_date ? new Date(requestData.due_date).toISOString() : null
+        };
+        const response = await documentsAPI.createBulkDocumentRequest(payload);
+        setSnackbar({ open: true, message: `${response.data.created_count} document requests sent to student`, severity: 'success' });
+      }
       setOpenRequest(false);
-      setRequestData({ student_id: '', document_type: '', description: '', due_date: '' });
+      setRequestData({ student_id: '', document_types: [], description: '', due_date: '' });
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message || 'Failed to create request';
       setSnackbar({ open: true, message: errorMsg, severity: 'error' });
@@ -437,7 +450,7 @@ const Documents = () => {
 
       {/* Request Document Dialog */}
       <Dialog open={openRequest} onClose={() => setOpenRequest(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Request Document from Student</DialogTitle>
+        <DialogTitle>Request Documents from Student</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
@@ -453,11 +466,21 @@ const Documents = () => {
                 </MenuItem>
               ))}
             </TextField>
-            <TextField label="Document Type" select fullWidth value={requestData.document_type} onChange={(e) => setRequestData({ ...requestData, document_type: e.target.value })}>
-              {documentTypes.map((type) => (
-                <MenuItem key={type.value} value={type.label}>{type.label}</MenuItem>
-              ))}
-            </TextField>
+            <Autocomplete
+              multiple
+              options={documentTypes}
+              getOptionLabel={(option) => option.label}
+              value={documentTypes.filter(t => requestData.document_types.includes(t.value))}
+              onChange={(_, newValue) => setRequestData({ ...requestData, document_types: newValue.map(t => t.value) })}
+              renderInput={(params) => (
+                <TextField {...params} label="Document Types" placeholder="Select document types" />
+              )}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip label={option.label} size="small" {...getTagProps({ index })} />
+                ))
+              }
+            />
             <TextField
               label="Due Date (optional)"
               type="date"
@@ -473,13 +496,15 @@ const Documents = () => {
               fullWidth
               value={requestData.description}
               onChange={(e) => setRequestData({ ...requestData, description: e.target.value })}
-              placeholder="e.g., Please upload your 12th marksheet for admission verification"
+              placeholder="e.g., Please upload your documents for admission verification"
             />
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenRequest(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleRequestSubmit}>Send Request</Button>
+          <Button variant="contained" onClick={handleRequestSubmit}>
+            {requestData.document_types.length > 1 ? `Request ${requestData.document_types.length} Documents` : 'Send Request'}
+          </Button>
         </DialogActions>
       </Dialog>
 

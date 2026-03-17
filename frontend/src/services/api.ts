@@ -59,6 +59,27 @@ export const studentsAPI = {
     api.get('/students/courses/list', { headers: getAuthHeader() }),
 };
 
+// Courses API
+export const coursesAPI = {
+  getAll: (params?: any) =>
+    api.get('/courses', { params, headers: getAuthHeader() }),
+
+  getById: (id: number) =>
+    api.get(`/courses/${id}`, { headers: getAuthHeader() }),
+
+  create: (data: any) =>
+    api.post('/courses', data, { headers: getAuthHeader() }),
+
+  update: (id: number, data: any) =>
+    api.put(`/courses/${id}`, data, { headers: getAuthHeader() }),
+
+  delete: (id: number) =>
+    api.delete(`/courses/${id}`, { headers: getAuthHeader() }),
+
+  getList: () =>
+    api.get('/courses/list', { headers: getAuthHeader() }),
+};
+
 // Fees API
 export const feesAPI = {
   getDashboard: () =>
@@ -120,6 +141,19 @@ export const documentsAPI = {
   getTypes: () =>
     api.get('/documents/types', { headers: getAuthHeader() }),
 
+  // Admin document type management
+  getAllTypes: () =>
+    api.get('/documents/types/all', { headers: getAuthHeader() }),
+
+  createType: (data: any) =>
+    api.post('/documents/types', data, { headers: getAuthHeader() }),
+
+  updateType: (id: number, data: any) =>
+    api.put(`/documents/types/${id}`, data, { headers: getAuthHeader() }),
+
+  deleteType: (id: number) =>
+    api.delete(`/documents/types/${id}`, { headers: getAuthHeader() }),
+
   upload: (formData: FormData) =>
     api.post('/documents', formData, {
       headers: { ...getAuthHeader(), 'Content-Type': 'multipart/form-data' },
@@ -167,6 +201,17 @@ export const documentsAPI = {
     });
   },
 
+  uploadMultipleDocuments: (documentType: string, files: File[]) => {
+    const formData = new FormData();
+    formData.append('document_type', documentType);
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+    return api.post('/documents/upload-multiple', formData, {
+      headers: { ...getAuthHeader(), 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   deleteMyDocument: (documentId: number) =>
     api.delete(`/documents/${documentId}`, { headers: getAuthHeader() }),
 
@@ -176,6 +221,9 @@ export const documentsAPI = {
 
   createDocumentRequest: (data: any) =>
     api.post('/documents/requests', data, { headers: getAuthHeader() }),
+
+  createBulkDocumentRequest: (data: any) =>
+    api.post('/documents/requests/bulk', data, { headers: getAuthHeader() }),
 
   cancelDocumentRequest: (requestId: number) =>
     api.put(`/documents/requests/${requestId}/cancel`, {}, { headers: getAuthHeader() }),
@@ -194,6 +242,44 @@ export const studentFeesAPI = {
 
   getMySummary: () =>
     api.get('/fees/my-summary', { headers: getAuthHeader() }),
+};
+
+// Payments API (Razorpay)
+export const paymentsAPI = {
+  createOrder: (feeId: number) =>
+    api.post('/payments/create-order', { fee_id: feeId }, { headers: getAuthHeader() }),
+
+  verifyPayment: (data: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    fee_id: number;
+  }) =>
+    api.post('/payments/verify', data, { headers: getAuthHeader() }),
+
+  getPaymentByFee: (feeId: number) =>
+    api.get(`/payments/fee/${feeId}`, { headers: getAuthHeader() }),
+
+  getPaymentHistory: () =>
+    api.get('/payments/history', { headers: getAuthHeader() }),
+
+  // Upload receipt (admin only)
+  uploadReceipt: (paymentId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/payments/${paymentId}/upload-receipt`, formData, {
+      headers: { ...getAuthHeader(), 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  // Download receipt - returns full response with headers
+  downloadReceipt: async (paymentId: number) => {
+    const response = await api.get(`/payments/${paymentId}/receipt`, {
+      headers: getAuthHeader(),
+      responseType: 'blob',
+    });
+    return response;
+  },
 };
 
 export default api;

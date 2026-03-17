@@ -8,6 +8,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Students from './pages/Students';
 import Fees from './pages/Fees';
 import Documents from './pages/Documents';
+import Courses from './pages/Courses';
 import StudentPortal from './pages/StudentPortal';
 import StudentFees from './pages/StudentFees';
 import StudentDocuments from './pages/StudentDocuments';
@@ -61,6 +62,7 @@ function App() {
               <Route path="students" element={<Students />} />
               <Route path="fees" element={<Fees />} />
               <Route path="documents" element={<Documents />} />
+              <Route path="courses" element={<Courses />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             

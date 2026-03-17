@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -29,9 +29,11 @@ import {
   Folder as FolderIcon,
   Settings as SettingsIcon,
   Notifications as NotificationsIcon,
+  School as SchoolIcon,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { logout } from '../store/slices/authSlice';
+import { authAPI } from '../services/api';
 
 const drawerWidth = 260;
 
@@ -40,6 +42,7 @@ const adminMenuItems = [
   { text: 'Students', icon: <PeopleIcon />, path: '/admin/students' },
   { text: 'Fees', icon: <MoneyIcon />, path: '/admin/fees' },
   { text: 'Documents', icon: <DocIcon />, path: '/admin/documents' },
+  { text: 'Courses', icon: <SchoolIcon />, path: '/admin/courses' },
 ];
 
 const studentMenuItems = [
@@ -55,13 +58,33 @@ const Layout = () => {
   const { user } = useAppSelector((state) => state.auth);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [studentProfile, setStudentProfile] = useState<{first_name: string; last_name: string; course: string; semester: number} | null>(null);
+
+  // Fetch student profile for students
+  useEffect(() => {
+    if (user?.role === 'student') {
+      const fetchProfile = async () => {
+        try {
+          const response = await authAPI.getMe();
+          if (response.data.student_profile) {
+            setStudentProfile(response.data.student_profile);
+          }
+        } catch (error) {
+          console.error('Error fetching student profile:', error);
+        }
+      };
+      fetchProfile();
+    }
+  }, [user]);
 
   const menuItems = user?.role === 'admin' ? adminMenuItems : studentMenuItems;
   const isStudent = user?.role === 'student';
   const isAdmin = user?.role === 'admin';
 
   // Get student name from user email or use default
-  const studentName = user?.email?.split('@')[0] || 'Student';
+  const studentName = studentProfile 
+    ? `${studentProfile.first_name} ${studentProfile.last_name}` 
+    : (user?.email?.split('@')[0] || 'Student');
   const studentInitials = studentName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   const handleDrawerToggle = () => {
@@ -177,15 +200,21 @@ const Layout = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Box sx={{ textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
               <Typography variant="body2" fontWeight="600">
-                {isStudent ? 'Rahul Sharma' : user?.email?.split('@')[0]}
+                {isStudent && studentProfile 
+                  ? `${studentProfile.first_name} ${studentProfile.last_name}` 
+                  : (user?.email?.split('@')[0] || 'User')}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {isStudent ? 'BCom Sem 3' : 'Administrator'}
+                {isStudent && studentProfile 
+                  ? `${studentProfile.course} Sem ${studentProfile.semester}` 
+                  : 'Administrator'}
               </Typography>
             </Box>
             <IconButton onClick={handleMenu}>
               <Avatar sx={{ bgcolor: '#667eea' }}>
-                {isStudent ? studentInitials : user?.email?.[0]?.toUpperCase() || 'U'}
+                {studentProfile 
+                  ? studentInitials 
+                  : (user?.email?.[0]?.toUpperCase() || 'U')}
               </Avatar>
             </IconButton>
           </Box>

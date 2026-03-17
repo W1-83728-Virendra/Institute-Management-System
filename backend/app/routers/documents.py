@@ -11,8 +11,8 @@ import io
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.models import User, Student, Document, DocumentStatus, DocumentRequest, DocumentAuditLog
-from app.schemas.schemas import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentRequestCreate, DocumentRequestResponse
+from app.models.models import User, Student, Document, DocumentStatus, DocumentRequest, DocumentAuditLog, DocumentType, UserRole
+from app.schemas.schemas import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentRequestCreate, DocumentRequestResponse, BulkDocumentRequestCreate, DocumentTypeCreate, DocumentTypeUpdate, DocumentTypeResponse
 from app.core.email_utils import send_document_verified_email, send_document_rejected_email, send_document_request_email
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -105,24 +105,154 @@ async def get_document_types(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get list of all document types."""
-    document_types = [
-        {"value": "10th_marksheet", "label": "10th Marksheet"},
-        {"value": "12th_marksheet", "label": "12th Marksheet"},
-        {"value": "semester_marksheet", "label": "Semester Marksheet"},
-        {"value": "id_proof", "label": "ID Proof (Aadhar/PAN)"},
-        {"value": "photo", "label": "Passport Photo"},
-        {"value": "transfer_certificate", "label": "Transfer Certificate"},
-        {"value": "leaving_certificate", "label": "Leaving Certificate"},
-        {"value": "character_certificate", "label": "Character Certificate"},
-        {"value": "bonafide_certificate", "label": "Bonafide Certificate"},
-        {"value": "income_certificate", "label": "Income Certificate"},
-        {"value": "caste_certificate", "label": "Caste Certificate"},
-        {"value": "domicile_certificate", "label": "Domicile Certificate"},
-        {"value": "library_card", "label": "Library Card"},
-        {"value": "other", "label": "Other Document"}
-    ]
+    """Get list of all document types from database."""
+    # Try to fetch from database
+    result = await db.execute(
+        select(DocumentType).where(DocumentType.is_active == True).order_by(DocumentType.display_order, DocumentType.label)
+    )
+    document_types_db = result.scalars().all()
+    
+    if document_types_db:
+        # Return from database
+        document_types = [
+            {
+                "value": dt.value,
+                "label": dt.label,
+                "category": dt.category,
+                "is_required": dt.is_required,
+                "id": dt.id
+            }
+            for dt in document_types_db
+        ]
+    else:
+        # Fallback to hardcoded if database is empty
+        document_types = [
+            {"value": "10th_marksheet", "label": "10th Marksheet", "category": "academic", "is_required": False},
+            {"value": "12th_marksheet", "label": "12th Marksheet", "category": "academic", "is_required": False},
+            {"value": "semester_marksheet", "label": "Semester Marksheet", "category": "academic", "is_required": False},
+            {"value": "id_proof", "label": "ID Proof (Aadhar/PAN)", "category": "id_proof", "is_required": False},
+            {"value": "photo", "label": "Passport Photo", "category": "id_proof", "is_required": False},
+            {"value": "transfer_certificate", "label": "Transfer Certificate", "category": "certificate", "is_required": False},
+            {"value": "leaving_certificate", "label": "Leaving Certificate", "category": "certificate", "is_required": False},
+            {"value": "character_certificate", "label": "Character Certificate", "category": "certificate", "is_required": False},
+            {"value": "bonafide_certificate", "label": "Bonafide Certificate", "category": "certificate", "is_required": False},
+            {"value": "income_certificate", "label": "Income Certificate", "category": "certificate", "is_required": False},
+            {"value": "caste_certificate", "label": "Caste Certificate", "category": "certificate", "is_required": False},
+            {"value": "domicile_certificate", "label": "Domicile Certificate", "category": "certificate", "is_required": False},
+            {"value": "library_card", "label": "Library Card", "category": "other", "is_required": False},
+            {"value": "other", "label": "Other Document", "category": "other", "is_required": False}
+        ]
+    
     return {"document_types": document_types}
+
+
+# Document Type Management Endpoints (Admin only)
+@router.post("/types", response_model=DocumentTypeResponse, status_code=status.HTTP_201_CREATED)
+async def create_document_type(
+    document_type: DocumentTypeCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new document type (admin only)."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    
+    # Check if value already exists
+    result = await db.execute(
+        select(DocumentType).where(DocumentType.value == document_type.value)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail="Document type with this value already exists")
+    
+    new_doc_type = DocumentType(**document_type.model_dump())
+    db.add(new_doc_type)
+    await db.commit()
+    await db.refresh(new_doc_type)
+    
+    return new_doc_type
+
+
+@router.put("/types/{type_id}", response_model=DocumentTypeResponse)
+async def update_document_type(
+    type_id: int,
+    document_type: DocumentTypeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update a document type (admin only)."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    
+    result = await db.execute(select(DocumentType).where(DocumentType.id == type_id))
+    db_type = result.scalar_one_or_none()
+    
+    if not db_type:
+        raise HTTPException(status_code=404, detail="Document type not found")
+    
+    # Update fields
+    update_data = document_type.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_type, field, value)
+    
+    await db.commit()
+    await db.refresh(db_type)
+    
+    return db_type
+
+
+@router.delete("/types/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document_type(
+    type_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a document type (admin only)."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    
+    result = await db.execute(select(DocumentType).where(DocumentType.id == type_id))
+    db_type = result.scalar_one_or_none()
+    
+    if not db_type:
+        raise HTTPException(status_code=404, detail="Document type not found")
+    
+    await db.delete(db_type)
+    await db.commit()
+    
+    return None
+
+
+@router.get("/types/all", response_model=dict)
+async def get_all_document_types_for_admin(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all document types including inactive ones (admin only)."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    
+    result = await db.execute(
+        select(DocumentType).order_by(DocumentType.display_order, DocumentType.label)
+    )
+    document_types = result.scalars().all()
+    
+    return {
+        "document_types": [
+            {
+                "id": dt.id,
+                "value": dt.value,
+                "label": dt.label,
+                "category": dt.category,
+                "description": dt.description,
+                "is_required": dt.is_required,
+                "is_active": dt.is_active,
+                "display_order": dt.display_order,
+                "created_at": dt.created_at
+            }
+            for dt in document_types
+        ]
+    }
 
 
 # Document Request Endpoints - MUST come BEFORE /{document_id} route
@@ -267,6 +397,83 @@ async def cancel_document_request(
     return {"message": "Document request cancelled"}
 
 
+@router.post("/requests/bulk", status_code=status.HTTP_201_CREATED, response_model=dict)
+async def create_bulk_document_requests(
+    request_data: BulkDocumentRequestCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Admin creates multiple document requests for a student at once."""
+    # Check if student exists
+    student_result = await db.execute(select(Student).where(Student.id == request_data.student_id))
+    student = student_result.scalar_one_or_none()
+    
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found"
+        )
+    
+    created_requests = []
+    
+    for document_type in request_data.document_types:
+        # Create document request
+        doc_request = DocumentRequest(
+            student_id=request_data.student_id,
+            document_type=document_type,
+            description=request_data.description,
+            due_date=request_data.due_date,
+            created_by=current_user.id,
+            status="pending"
+        )
+        db.add(doc_request)
+        created_requests.append({
+            "document_type": document_type,
+            "id": None  # Will be set after commit
+        })
+    
+    await db.commit()
+    
+    # Refresh to get IDs and send emails
+    for i, req in enumerate(created_requests):
+        # Get the recently added request
+        result = await db.execute(
+            select(DocumentRequest).where(
+                and_(
+                    DocumentRequest.student_id == request_data.student_id,
+                    DocumentRequest.document_type == req["document_type"]
+                )
+            ).order_by(DocumentRequest.created_at.desc())
+        )
+        doc_req = result.scalars().first()
+        if doc_req:
+            req["id"] = doc_req.id
+    
+    # Send email notification to student
+    try:
+        user_result = await db.execute(select(User).where(User.id == student.user_id))
+        user = user_result.scalar_one_or_none()
+        
+        if user:
+            # Send one email with all document types
+            doc_types_str = ", ".join(request_data.document_types)
+            send_document_request_email(
+                user.email, 
+                f"{student.first_name} {student.last_name}", 
+                doc_types_str,
+                request_data.due_date.strftime("%Y-%m-%d") if request_data.due_date else "",
+                request_data.description or ""
+            )
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+    
+    return {
+        "message": f"Created {len(created_requests)} document requests successfully",
+        "requests": created_requests,
+        "created_count": len(created_requests)
+    }
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=dict)
 async def upload_document(
     student_id: int = Form(...),
@@ -333,8 +540,14 @@ async def upload_document(
         pending_requests = request_result.scalars().all()
         
         for req in pending_requests:
+            # Case-insensitive comparison with flexible matching
             req_type = req.document_type.lower().replace('_', ' ').strip()
-            if req_type == search_type:
+            
+            # Check if types match (exact match or partial match)
+            if (req_type == search_type or 
+                search_type in req_type or 
+                req_type in search_type or
+                req.document_type.lower() == document_type.lower()):
                 req.status = "submitted"
     except Exception as e:
         print(f"Error resolving request: {e}")
@@ -463,8 +676,14 @@ async def upload_my_document(
         pending_requests = request_result.scalars().all()
         
         for req in pending_requests:
+            # Case-insensitive comparison with flexible matching
             req_type = req.document_type.lower().replace('_', ' ').strip()
-            if req_type == search_type:
+            
+            # Check if types match (exact match or partial match)
+            if (req_type == search_type or 
+                search_type in req_type or 
+                req_type in search_type or
+                req.document_type.lower() == document_type.lower()):
                 req.status = "submitted"
     except Exception as e:
         print(f"Error resolving request: {e}")
@@ -478,6 +697,97 @@ async def upload_my_document(
         "file_name": document.file_name,
         "status": document.status.value,
         "message": "Document uploaded successfully. Pending verification."
+    }
+
+
+@router.post("/upload-multiple")
+async def upload_multiple_documents(
+    document_type: str = Form(...),
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload multiple documents for the current student user."""
+    # Get student profile
+    result = await db.execute(
+        select(Student).where(Student.user_id == current_user.id)
+    )
+    student = result.scalar_one_or_none()
+    
+    if not student:
+        raise HTTPException(status_code=404, detail="No student profile found")
+    
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No files provided")
+    
+    created_documents = []
+    
+    for file in files:
+        # Save file
+        file_ext = file.filename.split('.')[-1] if '.' in file.filename else 'pdf'
+        unique_filename = f"{student.admission_no}_{document_type}_{uuid.uuid4().hex[:8]}.{file_ext}"
+        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        # Create document record
+        document = Document(
+            student_id=student.id,
+            document_type=document_type,
+            file_name=file.filename,
+            file_path=file_path,
+            status=DocumentStatus.PENDING,
+            issued_date=datetime.now()
+        )
+        db.add(document)
+        created_documents.append(document)
+    
+    # Auto-resolve matching pending requests
+    try:
+        search_type = document_type.lower().replace('_', ' ').strip()
+        
+        request_query = select(DocumentRequest).where(
+            and_(
+                DocumentRequest.student_id == student.id,
+                DocumentRequest.status == "pending"
+            )
+        )
+        request_result = await db.execute(request_query)
+        pending_requests = request_result.scalars().all()
+        
+        for req in pending_requests:
+            # Case-insensitive comparison with flexible matching
+            req_type = req.document_type.lower().replace('_', ' ').strip()
+            
+            # Check if types match (exact match or partial match)
+            if (req_type == search_type or 
+                search_type in req_type or 
+                req_type in search_type or
+                req.document_type.lower() == document_type.lower()):
+                req.status = "submitted"
+    except Exception as e:
+        print(f"Error resolving request: {e}")
+
+    await db.commit()
+    
+    # Refresh documents to get IDs
+    for doc in created_documents:
+        await db.refresh(doc)
+    
+    return {
+        "message": f"{len(created_documents)} documents uploaded successfully. Pending verification.",
+        "created_count": len(created_documents),
+        "documents": [
+            {
+                "id": doc.id,
+                "document_type": doc.document_type,
+                "file_name": doc.file_name,
+                "status": doc.status.value
+            }
+            for doc in created_documents
+        ]
     }
 
 
@@ -669,8 +979,14 @@ async def bulk_upload_documents(
             pending_requests = request_result.scalars().all()
             
             for req in pending_requests:
+                # Case-insensitive comparison with flexible matching
                 req_type = req.document_type.lower().replace('_', ' ').strip()
-                if req_type == search_type:
+                
+                # Check if types match (exact match or partial match)
+                if (req_type == search_type or 
+                    search_type in req_type or 
+                    req_type in search_type or
+                    req.document_type.lower() == document_type.lower()):
                     req.status = "submitted"
         except Exception as e:
             print(f"Error resolving request during bulk upload: {e}")

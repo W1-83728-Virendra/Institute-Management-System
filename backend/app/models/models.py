@@ -66,6 +66,10 @@ class Student(Base):
     address = Column(Text)
     course = Column(String(100))
     semester = Column(Integer, default=1)
+    gender = Column(String(20))  # male, female, other
+    caste_category = Column(String(20))  # General, OBC, SC, ST
+    academic_year = Column(String(20))  # 2024-2025, etc.
+    admission_quota = Column(String(50))  # Management, Government, NRI, etc.
     guardian_name = Column(String(100))
     guardian_phone = Column(String(20))
     admission_date = Column(DateTime(timezone=True), server_default=func.now())
@@ -77,6 +81,7 @@ class Student(Base):
     fees = relationship("Fee", back_populates="student")
     documents = relationship("Document", back_populates="student")
     payments = relationship("Payment", back_populates="student")
+    document_requests = relationship("DocumentRequest", back_populates="student")
 
 
 class Course(Base):
@@ -121,10 +126,15 @@ class Payment(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     fee_id = Column(Integer, ForeignKey("fees.id"), nullable=False)
     amount = Column(Float, nullable=False)
-    payment_method = Column(String(50))  # UPI, Card, Cash, Bank Transfer
+    payment_method = Column(String(50))  # UPI, Card, Cash, Bank Transfer, Razorpay
+    razorpay_order_id = Column(String(100))  # Razorpay order ID
+    razorpay_payment_id = Column(String(100))  # Razorpay payment ID
+    razorpay_signature = Column(String(200))  # Razorpay signature for verification
     transaction_id = Column(String(100), unique=True)
+    receipt_url = Column(String(500))  # URL to uploaded receipt
+    receipt_filename = Column(String(255))  # Original filename
     payment_date = Column(DateTime(timezone=True), server_default=func.now())
-    status = Column(String(20), default="completed")  # completed, failed, pending
+    status = Column(String(20), default="pending")  # completed, failed, pending
     notes = Column(Text)
     
     # Relationships
@@ -169,8 +179,23 @@ class DocumentRequest(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
-    student = relationship("Student", foreign_keys=[student_id])
-    creator = relationship("User")
+    student = relationship("Student", back_populates="document_requests")
+
+
+class DocumentType(Base):
+    """Dynamic document types - configurable by admin"""
+    __tablename__ = "document_types"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    value = Column(String(100), unique=True, nullable=False)  # 10th_marksheet
+    label = Column(String(200), nullable=False)  # 10th Marksheet
+    category = Column(String(50), default="other")  # academic, id_proof, certificate, other
+    description = Column(Text, nullable=True)
+    is_required = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    display_order = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
 class DocumentAuditLog(Base):

@@ -170,6 +170,23 @@ async def get_fees(
         )
         student = student_result.scalar_one_or_none()
         
+        # Get payment info if fee is paid
+        payment_info = None
+        if fee.status == FeeStatus.PAID:
+            payment_result = await db.execute(
+                select(Payment).where(Payment.fee_id == fee.id)
+            )
+            payment = payment_result.scalars().first()
+            if payment:
+                payment_info = {
+                    "id": payment.id,
+                    "transaction_id": payment.transaction_id,
+                    "payment_method": payment.payment_method,
+                    "payment_date": payment.payment_date,
+                    "receipt_url": payment.receipt_url,
+                    "receipt_filename": payment.receipt_filename
+                }
+        
         items.append({
             "id": fee.id,
             "student": {
@@ -183,7 +200,8 @@ async def get_fees(
             "status": fee.status.value,
             "semester": fee.semester,
             "academic_year": fee.academic_year,
-            "course": fee.course  # Include course name
+            "course": fee.course,  # Include course name
+            "payment": payment_info
         })
     
     return {

@@ -72,6 +72,10 @@ class StudentBase(BaseModel):
     address: Optional[str] = None
     course: str
     semester: int = 1
+    gender: Optional[str] = None  # male, female, other
+    caste_category: Optional[str] = None  # General, OBC, SC, ST
+    academic_year: Optional[str] = None  # 2024-2025, etc.
+    admission_quota: Optional[str] = None  # Management, Government, NRI, etc.
     guardian_name: Optional[str] = None
     guardian_phone: Optional[str] = None
 
@@ -88,6 +92,10 @@ class StudentUpdate(BaseModel):
     address: Optional[str] = None
     course: Optional[str] = None
     semester: Optional[int] = None
+    gender: Optional[str] = None
+    caste_category: Optional[str] = None
+    academic_year: Optional[str] = None
+    admission_quota: Optional[str] = None
     guardian_name: Optional[str] = None
     guardian_phone: Optional[str] = None
 
@@ -110,6 +118,10 @@ class StudentListResponse(BaseModel):
     phone: Optional[str]
     course: str
     semester: int
+    gender: Optional[str] = None
+    caste_category: Optional[str] = None
+    academic_year: Optional[str] = None
+    admission_quota: Optional[str] = None
     fee_status: Optional[str] = None
     document_status: Optional[str] = None
     
@@ -127,6 +139,14 @@ class CourseBase(BaseModel):
 
 class CourseCreate(CourseBase):
     pass
+
+
+class CourseUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    duration_years: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class CourseResponse(CourseBase):
@@ -259,6 +279,14 @@ class DocumentRequestCreate(BaseModel):
     due_date: Optional[datetime] = None
 
 
+class BulkDocumentRequestCreate(BaseModel):
+    """Schema for creating multiple document requests at once"""
+    student_id: int
+    document_types: List[str] = Field(..., description="List of document types to request")
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None
+
+
 class DocumentRequestResponse(BaseModel):
     id: int
     student_id: int
@@ -304,3 +332,37 @@ class PaginatedResponse(BaseModel):
     page_size: int
     total_pages: int
     items: List
+
+
+# Document Type Schemas
+class DocumentTypeBase(BaseModel):
+    value: str = Field(..., description="Unique value like 10th_marksheet")
+    label: str = Field(..., description="Display label like 10th Marksheet")
+    category: Optional[str] = "other"  # academic, id_proof, certificate, other
+    description: Optional[str] = None
+    is_required: bool = False
+    is_active: bool = True
+    display_order: int = 0
+
+
+class DocumentTypeCreate(DocumentTypeBase):
+    pass
+
+
+class DocumentTypeUpdate(BaseModel):
+    value: Optional[str] = None
+    label: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    is_required: Optional[bool] = None
+    is_active: Optional[bool] = None
+    display_order: Optional[int] = None
+
+
+class DocumentTypeResponse(DocumentTypeBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True

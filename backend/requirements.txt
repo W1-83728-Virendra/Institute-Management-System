@@ -29,3 +29,6 @@ httpx==0.26.0
 
 # CORS
 starlette==0.35.1
+
+# Payment Gateway
+razorpay==1.4.0

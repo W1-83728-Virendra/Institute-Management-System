@@ -58,7 +58,7 @@ const StudentDocuments = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [openUpload, setOpenUpload] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [documentType, setDocumentType] = useState('');
   const [reuploadId, setReuploadId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -139,15 +139,26 @@ const StudentDocuments = () => {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !documentType) {
-      setSnackbar({ open: true, message: 'Please select a document type and file', severity: 'error' });
+    if (selectedFiles.length === 0 || !documentType) {
+      setSnackbar({ open: true, message: 'Please select document type and at least one file', severity: 'error' });
       return;
     }
 
     setUploading(true);
     try {
-      await documentsAPI.uploadMyDocument(documentType, selectedFile, reuploadId || undefined);
-      setSnackbar({ open: true, message: reuploadId ? 'Document replaced successfully!' : 'Document uploaded successfully!', severity: 'success' });
+      // If there's a reuploadId, use single file upload
+      if (reuploadId && selectedFiles.length === 1) {
+        await documentsAPI.uploadMyDocument(documentType, selectedFiles[0], reuploadId);
+        setSnackbar({ open: true, message: 'Document replaced successfully!', severity: 'success' });
+      } else if (selectedFiles.length > 1) {
+        // Multiple files - use bulk upload
+        await documentsAPI.uploadMultipleDocuments(documentType, selectedFiles);
+        setSnackbar({ open: true, message: `${selectedFiles.length} documents uploaded successfully!`, severity: 'success' });
+      } else {
+        // Single file
+        await documentsAPI.uploadMyDocument(documentType, selectedFiles[0], undefined);
+        setSnackbar({ open: true, message: 'Document uploaded successfully!', severity: 'success' });
+      }
       handleCloseDialog();
       fetchDocuments(); // Refresh documents list
     } catch (error: any) {
@@ -160,14 +171,17 @@ const StudentDocuments = () => {
 
   const handleCloseDialog = () => {
     setOpenUpload(false);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setDocumentType('');
     setReuploadId(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFiles(Array.from(e.target.files));
     }
   };
 
@@ -429,14 +443,22 @@ const StudentDocuments = () => {
                 onChange={handleFileChange}
                 style={{ display: 'none' }}
                 accept=".pdf,.jpg,.jpeg,.png"
+                multiple
               />
-              {selectedFile ? (
-                <Typography>{selectedFile.name}</Typography>
+              {selectedFiles.length > 0 ? (
+                <Box>
+                  <Typography fontWeight="bold">{selectedFiles.length} file(s) selected</Typography>
+                  {selectedFiles.map((file, index) => (
+                    <Typography key={index} variant="body2" color="text.secondary">
+                      {file.name}
+                    </Typography>
+                  ))}
+                </Box>
               ) : (
                 <>
                   <CloudUpload sx={{ fontSize: 48, color: 'grey.400', mb: 1 }} />
-                  <Typography>Click to select file</Typography>
-                  <Typography variant="caption" color="text.secondary">PDF, JPG, PNG (max 10MB)</Typography>
+                  <Typography>Click to select files</Typography>
+                  <Typography variant="caption" color="text.secondary">PDF, JPG, PNG (max 10MB each)</Typography>
                 </>
               )}
             </Box>
@@ -444,8 +466,12 @@ const StudentDocuments = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button variant="contained" onClick={handleUpload} disabled={uploading || !selectedFile || !documentType}>
-            {uploading ? 'Uploading...' : (reuploadId ? 'Replace' : 'Upload')}
+          <Button 
+            variant="contained" 
+            onClick={handleUpload} 
+            disabled={uploading || selectedFiles.length === 0 || !documentType}
+          >
+            {uploading ? 'Uploading...' : (reuploadId ? 'Replace' : (selectedFiles.length > 1 ? `Upload ${selectedFiles.length} Files` : 'Upload'))}
           </Button>
         </DialogActions>
       </Dialog>

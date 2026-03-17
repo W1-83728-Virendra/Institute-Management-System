@@ -9,6 +9,110 @@ from app.core.database import get_db
 async def migrate():
     async for db in get_db():
         try:
+            # Add gender column to students
+            await db.execute(text("""
+                ALTER TABLE students 
+                ADD COLUMN IF NOT EXISTS gender VARCHAR(20)
+            """))
+            await db.commit()
+            print('✅ Added gender column to students')
+        except Exception as e:
+            await db.rollback()
+            print(f'Gender column: {e}')
+
+        try:
+            # Add caste_category column to students
+            await db.execute(text("""
+                ALTER TABLE students 
+                ADD COLUMN IF NOT EXISTS caste_category VARCHAR(50)
+            """))
+            await db.commit()
+            print('✅ Added caste_category column to students')
+        except Exception as e:
+            await db.rollback()
+            print(f'Caste_category column: {e}')
+
+        try:
+            # Add academic_year column to students
+            await db.execute(text("""
+                ALTER TABLE students 
+                ADD COLUMN IF NOT EXISTS academic_year VARCHAR(20)
+            """))
+            await db.commit()
+            print('✅ Added academic_year column to students')
+        except Exception as e:
+            await db.rollback()
+            print(f'Academic_year column: {e}')
+
+        try:
+            # Add admission_quota column to students
+            await db.execute(text("""
+                ALTER TABLE students 
+                ADD COLUMN IF NOT EXISTS admission_quota VARCHAR(50)
+            """))
+            await db.commit()
+            print('✅ Added admission_quota column to students')
+        except Exception as e:
+            await db.rollback()
+            print(f'Admission_quota column: {e}')
+
+        try:
+            # Add razorpay columns to payments
+            await db.execute(text("""
+                ALTER TABLE payments 
+                ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(100)
+            """))
+            await db.commit()
+            print('✅ Added razorpay_order_id column to payments')
+        except Exception as e:
+            await db.rollback()
+            print(f'Razorpay order_id column: {e}')
+
+        try:
+            await db.execute(text("""
+                ALTER TABLE payments 
+                ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(100)
+            """))
+            await db.commit()
+            print('✅ Added razorpay_payment_id column to payments')
+        except Exception as e:
+            await db.rollback()
+            print(f'Razorpay payment_id column: {e}')
+
+        try:
+            await db.execute(text("""
+                ALTER TABLE payments 
+                ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(200)
+            """))
+            await db.commit()
+            print('✅ Added razorpay_signature column to payments')
+        except Exception as e:
+            await db.rollback()
+            print(f'Razorpay signature column: {e}')
+
+        try:
+            await db.execute(text("""
+                ALTER TABLE payments 
+                ADD COLUMN IF NOT EXISTS receipt_url VARCHAR(500)
+            """))
+            await db.commit()
+            print('✅ Added receipt_url column to payments')
+        except Exception as e:
+            await db.rollback()
+            print(f'Receipt_url column: {e}')
+
+        try:
+            await db.execute(text("""
+                ALTER TABLE payments 
+                ADD COLUMN IF NOT EXISTS receipt_filename VARCHAR(255)
+            """))
+            await db.commit()
+            print('✅ Added receipt_filename column to payments')
+        except Exception as e:
+            await db.rollback()
+            print(f'Receipt_filename column: {e}')
+
+        try:
             # Add category column
             await db.execute(text("""
                 ALTER TABLE documents 

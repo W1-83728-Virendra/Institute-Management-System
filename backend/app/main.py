@@ -1,18 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.security import get_password_hash
-from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus
-from app.routers import auth, students, fees, documents
+from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus, DocumentType
+from app.routers import auth, students, fees, documents, courses, payments
 from datetime import datetime, timedelta
+from sqlalchemy import select
 
 
 async def seed_admin_user():
     """Create default admin and student users if not exists"""
-    from sqlalchemy import select
     async with AsyncSessionLocal() as session:
         # Create admin user
         result = await session.execute(
@@ -47,113 +48,79 @@ async def seed_admin_user():
             await session.commit()
             await session.refresh(student_user)
             print("Created default student user: student@edu.com / student123")
-        
-        # Check if student profile exists
-        result = await session.execute(
-            select(Student).where(Student.user_id == student_user.id)
-        )
-        student_profile = result.scalar_one_or_none()
-        
-        if not student_profile:
-            # Create student profile
-            student_profile = Student(
-                user_id=student_user.id,
-                admission_no="ADM-2024-001",
-                first_name="Rahul",
-                last_name="Sharma",
-                phone="9876543210",
-                course="BCom",
-                semester=3
+            
+            # Check if student profile exists
+            result = await session.execute(
+                select(Student).where(Student.user_id == student_user.id)
             )
-            session.add(student_profile)
-            await session.commit()
-            await session.refresh(student_profile)
-            print("Created student profile for Rahul Sharma")
-        
-        # Create a course if not exists
-        result = await session.execute(
-            select(Course).where(Course.code == "BCOM")
-        )
-        course = result.scalar_one_or_none()
-        
-        if not course:
-            course = Course(
-                name="Bachelor of Commerce",
-                code="BCOM",
-                description="3-year Commerce degree",
-                duration_years=3
-            )
-            session.add(course)
-            await session.commit()
-            await session.refresh(course)
-            print("Created BCom course")
-        
-        # Create sample fees for the student
-        result = await session.execute(
-            select(Fee).where(Fee.student_id == student_profile.id)
-        )
-        existing_fees = result.scalars().all()
-        
-        if len(existing_fees) == 0:
-            # Create fees for Semester 1, 2, 3
-            for sem in [1, 2, 3]:
-                fee = Fee(
-                    student_id=student_profile.id,
-                    course_id=course.id,
-                    fee_type="Tuition Fee",
-                    amount=25000,
-                    due_date=datetime(2024 if sem == 1 or sem == 2 else 2025, 6 if sem % 2 == 1 else 12, 15),
-                    status=FeeStatus.PAID if sem <= 3 else FeeStatus.PENDING,
-                    academic_year="2024-25" if sem <= 2 else "2025-26",
-                    semester=sem
+            student_profile = result.scalar_one_or_none()
+            
+            if not student_profile:
+                # Create student profile
+                student_profile = Student(
+                    user_id=student_user.id,
+                    admission_no="ADM-2024-001",
+                    first_name="Rahul",
+                    last_name="Sharma",
+                    phone="9876543210",
+                    course="BCom",
+                    semester=3
                 )
-                session.add(fee)
+                session.add(student_profile)
+                await session.commit()
+                await session.refresh(student_profile)
+                print("Created student profile for Rahul Sharma")
             
-            # Add one pending fee for demo
-            pending_fee = Fee(
-                student_id=student_profile.id,
-                course_id=course.id,
-                fee_type="Exam Fee",
-                amount=5000,
-                due_date=datetime(2025, 6, 15),
-                status=FeeStatus.PENDING,
-                academic_year="2025-26",
-                semester=4
+            # Create a course if not exists
+            result = await session.execute(
+                select(Course).where(Course.code == "BCOM")
             )
-            session.add(pending_fee)
+            course = result.scalar_one_or_none()
             
-            await session.commit()
-            print("Created sample fees for student")
+            if not course:
+                course = Course(
+                    name="Bachelor of Commerce",
+                    code="BCOM",
+                    description="3-year Commerce degree",
+                    duration_years=3
+                )
+                session.add(course)
+                await session.commit()
+                await session.refresh(course)
+                print("Created BCom course")
+
+
+async def seed_document_types():
+    """Seed default document types if not exists"""
+    async with AsyncSessionLocal() as session:
+        # Check if document types already exist
+        result = await session.execute(select(DocumentType))
+        existing_types = result.scalars().all()
         
-        # Create sample documents
-        result = await session.execute(
-            select(Document).where(Document.student_id == student_profile.id)
-        )
-        existing_docs = result.scalars().all()
-        
-        if len(existing_docs) == 0:
-            doc_types = [
-                ("10th Marksheet", "10th_marksheet.pdf", DocumentStatus.VERIFIED),
-                ("12th Marksheet", "12th_marksheet.pdf", DocumentStatus.VERIFIED),
-                ("Transfer Certificate", "tc.pdf", DocumentStatus.VERIFIED),
-                ("Photo", "photo.jpg", DocumentStatus.VERIFIED),
-                ("Aadhar Card", "aadhar.pdf", DocumentStatus.VERIFIED),
+        if not existing_types:
+            default_types = [
+                {"value": "10th_marksheet", "label": "10th Marksheet", "category": "academic", "is_required": True, "display_order": 1},
+                {"value": "12th_marksheet", "label": "12th Marksheet", "category": "academic", "is_required": True, "display_order": 2},
+                {"value": "semester_marksheet", "label": "Semester Marksheet", "category": "academic", "is_required": True, "display_order": 3},
+                {"value": "id_proof", "label": "ID Proof (Aadhar/PAN)", "category": "id_proof", "is_required": True, "display_order": 4},
+                {"value": "photo", "label": "Passport Photo", "category": "id_proof", "is_required": True, "display_order": 5},
+                {"value": "transfer_certificate", "label": "Transfer Certificate", "category": "certificate", "is_required": False, "display_order": 6},
+                {"value": "leaving_certificate", "label": "Leaving Certificate", "category": "certificate", "is_required": False, "display_order": 7},
+                {"value": "character_certificate", "label": "Character Certificate", "category": "certificate", "is_required": False, "display_order": 8},
+                {"value": "bonafide_certificate", "label": "Bonafide Certificate", "category": "certificate", "is_required": False, "display_order": 9},
+                {"value": "income_certificate", "label": "Income Certificate", "category": "certificate", "is_required": False, "display_order": 10},
+                {"value": "caste_certificate", "label": "Caste Certificate", "category": "certificate", "is_required": False, "display_order": 11},
+                {"value": "domicile_certificate", "label": "Domicile Certificate", "category": "certificate", "is_required": False, "display_order": 12},
+                {"value": "library_card", "label": "Library Card", "category": "other", "is_required": False, "display_order": 13},
+                {"value": "other", "label": "Other Document", "category": "other", "is_required": False, "display_order": 14},
             ]
             
-            for doc_type, filename, status in doc_types:
-                doc = Document(
-                    student_id=student_profile.id,
-                    document_type=doc_type,
-                    file_name=filename,
-                    file_path=f"uploads/documents/{filename}",
-                    status=status,
-                    issued_date=datetime.utcnow(),
-                    is_college_issued=True
-                )
-                session.add(doc)
+            for doc_type in default_types:
+                new_type = DocumentType(**doc_type)
+                session.add(new_type)
             
             await session.commit()
-            print("Created sample documents for student")
+            print(f"Seeded {len(default_types)} document types")
 
 
 @asynccontextmanager
@@ -163,6 +130,8 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     # Seed admin user
     await seed_admin_user()
+    # Seed document types
+    await seed_document_types()
     yield
     # Shutdown: Close database connections
     await engine.dispose()
@@ -190,6 +159,13 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(students.router, prefix="/api")
 app.include_router(fees.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(courses.router, prefix="/api")
+app.include_router(payments.router, prefix="/api")
+
+# Serve uploaded files
+import os
+os.makedirs("backend/uploads/receipts", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="backend/uploads"), name="uploads")
 
 
 @app.get("/")
@@ -204,3 +180,8 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

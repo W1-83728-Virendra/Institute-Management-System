@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Box, Card, CardContent, Typography, Button, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Grid, MenuItem, Snackbar, Alert, Autocomplete
 } from '@mui/material';
-import { Add as AddIcon, Send as SendIcon, Visibility as ViewIcon, Group as GroupIcon } from '@mui/icons-material';
+import { Add as AddIcon, Send as SendIcon, Visibility as ViewIcon, Upload as UploadIcon } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchFees, fetchDashboardStats, payFee, createFee } from '../store/slices/feesSlice';
 import { fetchStudents } from '../store/slices/studentsSlice';
-import { feesAPI } from '../services/api';
+import { feesAPI, paymentsAPI } from '../services/api';
 
 const Fees = () => {
   const dispatch = useAppDispatch();
@@ -21,6 +21,8 @@ const Fees = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
   const [feeForm, setFeeForm] = useState({ selectedStudent: null as any, fee_type: 'Tuition Fee', amount: '', due_date: '', description: '' });
   const [bulkForm, setBulkForm] = useState({ course_id: '', fee_type: 'Tuition Fee', amount: '', due_date: '', academic_year: '2024-2025', semester: 1, description: '' });
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     dispatch(fetchFees({}));
@@ -111,6 +113,26 @@ const Fees = () => {
     }
   };
 
+  const handleUploadReceipt = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedFee?.payment?.id) return;
+    
+    setUploadingReceipt(true);
+    try {
+      await paymentsAPI.uploadReceipt(selectedFee.payment.id, file);
+      setSnackbar({ open: true, message: 'Receipt uploaded successfully', severity: 'success' });
+      dispatch(fetchFees({}));
+      dispatch(fetchDashboardStats());
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error?.response?.data?.detail || 'Failed to upload receipt', severity: 'error' });
+    } finally {
+      setUploadingReceipt(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const formatCurrency = (amount: number) => `₹${amount?.toLocaleString() || 0}`;
 
   return (
@@ -121,9 +143,6 @@ const Fees = () => {
           <Button variant="outlined" startIcon={<SendIcon />} onClick={handleSendReminder}>Send Reminder</Button>
           <Button variant="contained" startIcon={<AddIcon />} onClick={openAddFeeDialog}>
             Add Fee
-          </Button>
-          <Button variant="outlined" startIcon={<GroupIcon />} onClick={() => setOpenBulkDialog(true)}>
-            Bulk Create
           </Button>
         </Box>
       </Box>
@@ -255,6 +274,41 @@ const Fees = () => {
               </Typography>
               {selectedFee.semester && <Typography><strong>Semester:</strong> {selectedFee.semester}</Typography>}
               {selectedFee.academic_year && <Typography><strong>Academic Year:</strong> {selectedFee.academic_year}</Typography>}
+              
+              {/* Payment & Receipt Section */}
+              {selectedFee.payment && (
+                <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" gutterBottom>Payment Details</Typography>
+                  <Typography variant="body2"><strong>Transaction ID:</strong> {selectedFee.payment.transaction_id || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Payment Method:</strong> {selectedFee.payment.payment_method || 'N/A'}</Typography>
+                  <Typography variant="body2"><strong>Payment Date:</strong> {selectedFee.payment.payment_date ? new Date(selectedFee.payment.payment_date).toLocaleString() : 'N/A'}</Typography>
+                  
+                  {/* Upload Receipt Button */}
+                  <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleUploadReceipt}
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      style={{ display: 'none' }}
+                    />
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<UploadIcon />}
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingReceipt}
+                    >
+                      {uploadingReceipt ? 'Uploading...' : selectedFee.payment.receipt_filename ? 'Replace Receipt' : 'Upload Receipt'}
+                    </Button>
+                    {selectedFee.payment.receipt_filename && (
+                      <Typography variant="caption" color="text.secondary">
+                        📎 {selectedFee.payment.receipt_filename}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
             </Box>
           )}
         </DialogContent>

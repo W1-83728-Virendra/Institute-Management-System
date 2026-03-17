@@ -3,7 +3,7 @@ import { Box, Card, CardContent, Typography, Button, Grid } from '@mui/material'
 import { AttachMoney, Description, CheckCircle, Receipt, Warning } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '../store/hooks';
-import { studentFeesAPI, documentsAPI } from '../services/api';
+import { studentFeesAPI, documentsAPI, authAPI } from '../services/api';
 
 // StatCard component matching admin dashboard style
 const StatCard = ({ icon, value, label, color }: { icon: React.ReactNode; value: string | number; label: string; color: string }) => (
@@ -49,6 +49,22 @@ const StudentPortal = () => {
   const [feeSummary, setFeeSummary] = useState<FeeSummary | null>(null);
   const [docStats, setDocStats] = useState<DocStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [studentProfile, setStudentProfile] = useState<{first_name: string; last_name: string; course: string; semester: number} | null>(null);
+
+  // Fetch student profile
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await authAPI.getMe();
+        if (response.data.student_profile) {
+          setStudentProfile(response.data.student_profile);
+        }
+      } catch (error) {
+        console.error('Error fetching student profile:', error);
+      }
+    };
+    fetchProfile();
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -142,7 +158,9 @@ const StudentPortal = () => {
     }
   };
 
-  const studentName = user?.name || user?.email?.split('@')[0] || 'Student';
+  const studentName = user?.name || (studentProfile 
+    ? `${studentProfile.first_name} ${studentProfile.last_name}` 
+    : user?.email?.split('@')[0]) || 'Student';
   const pendingAmount = feeSummary?.total_pending || 0;
 
   if (loading) {

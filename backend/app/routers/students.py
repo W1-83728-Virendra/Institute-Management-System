@@ -39,7 +39,9 @@ async def get_students(
             Student.first_name.ilike(f"%{search}%"),
             Student.last_name.ilike(f"%{search}%"),
             Student.admission_no.ilike(f"%{search}%"),
-            Student.email.ilike(f"%{search}%")
+            Student.phone.ilike(f"%{search}%"),
+            Student.guardian_name.ilike(f"%{search}%"),
+            Student.guardian_phone.ilike(f"%{search}%")
         )
         base_query = base_query.where(search_filter)
         count_query = count_query.where(search_filter)
@@ -272,6 +274,14 @@ async def update_student(
         student.course = student_data.course
     if student_data.semester is not None:
         student.semester = student_data.semester
+    if student_data.gender is not None:
+        student.gender = student_data.gender
+    if student_data.caste_category is not None:
+        student.caste_category = student_data.caste_category
+    if student_data.academic_year is not None:
+        student.academic_year = student_data.academic_year
+    if student_data.admission_quota is not None:
+        student.admission_quota = student_data.admission_quota
     if student_data.guardian_name is not None:
         student.guardian_name = student_data.guardian_name
     if student_data.guardian_phone is not None:
@@ -413,6 +423,10 @@ async def create_student(
         address=student_data.address,
         course=student_data.course,
         semester=student_data.semester,
+        gender=student_data.gender,
+        caste_category=student_data.caste_category,
+        academic_year=student_data.academic_year,
+        admission_quota=student_data.admission_quota,
         guardian_name=student_data.guardian_name,
         guardian_phone=student_data.guardian_phone
     )

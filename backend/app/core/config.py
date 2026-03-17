@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: list = ["http://localhost:3000"]
     
+    # Razorpay Payment Gateway
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_PAYMENT_URL: str = "https://api.razorpay.com/v1"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

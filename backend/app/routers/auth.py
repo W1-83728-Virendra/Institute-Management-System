@@ -163,12 +163,30 @@ async def register_admin(
 
 @router.get("/me", response_model=dict)
 async def get_me(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Get current user information."""
-    return {
+    """Get current user information including student profile if applicable."""
+    response = {
         "id": current_user.id,
         "email": current_user.email,
         "role": current_user.role.value,
         "is_active": current_user.is_active
     }
+    
+    # If user is a student, include student profile data
+    if current_user.role == UserRole.STUDENT:
+        result = await db.execute(
+            select(Student).where(Student.user_id == current_user.id)
+        )
+        student = result.scalar_one_or_none()
+        if student:
+            response["student_profile"] = {
+                "first_name": student.first_name,
+                "last_name": student.last_name,
+                "course": student.course,
+                "semester": student.semester,
+                "admission_no": student.admission_no
+            }
+    
+    return response
