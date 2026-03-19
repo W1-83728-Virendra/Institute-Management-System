@@ -29,3 +29,6 @@ httpx==0.26.0
 
 # CORS
 starlette==0.35.1
+
+# Scheduler for automated reminders
+APScheduler==3.10.4

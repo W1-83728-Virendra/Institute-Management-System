@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.security import get_password_hash
-from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus
-from app.routers import auth, students, fees, documents
+from app.core.scheduler import start_scheduler, stop_scheduler
+from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus, Notification, NotificationSettings, ScheduledReminder, UserNotificationPreferences
+from app.routers import auth, students, fees, documents, notifications
 from datetime import datetime, timedelta
 
 
@@ -165,8 +166,11 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     # Seed admin user
     await seed_admin_user()
+    # Start notification scheduler
+    start_scheduler(AsyncSessionLocal)
     yield
-    # Shutdown: Close database connections
+    # Shutdown: Stop scheduler and close database connections
+    stop_scheduler()
     await engine.dispose()
 
 
@@ -192,6 +196,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(students.router, prefix="/api")
 app.include_router(fees.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 
 
 @app.get("/")
