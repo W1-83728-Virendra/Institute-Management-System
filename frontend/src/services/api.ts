@@ -373,6 +373,7 @@ export const studentFeesAPI = {
 export const documentsAPI = {
   // Admin documents
   getAll: (params?: any) => api.get('/documents', { params }),
+  getStats: () => api.get('/documents/stats'),
   getById: (id: number) => api.get(`/documents/${id}`),
   getTypes: () => api.get('/documents/types'),
   create: (data: any) => api.post('/documents', data),
@@ -411,6 +412,40 @@ export const documentsAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+};
+
+// ==================== Notifications API ====================
+export const notificationsAPI = {
+  // Get all notifications
+  getAll: (params?: { page?: number; page_size?: number; unread_only?: boolean }) => 
+    api.get('/notifications', { params }),
+  
+  // Get unread count
+  getUnreadCount: () => api.get('/notifications/unread-count'),
+  
+  // Mark as read
+  markAsRead: (id: number) => api.put(`/notifications/${id}/read`),
+  
+  // Mark all as read
+  markAllAsRead: () => api.put('/notifications/read-all'),
+  
+  // Delete notification
+  delete: (id: number) => api.delete(`/notifications/${id}`),
+  
+  // Scheduled Reminders (Admin only)
+  getReminders: () => api.get('/notifications/reminders'),
+  createReminder: (data: any) => api.post('/notifications/reminders', data),
+  updateReminder: (id: number, data: any) => api.put(`/notifications/reminders/${id}`, data),
+  deleteReminder: (id: number) => api.delete(`/notifications/reminders/${id}`),
+  triggerReminder: (id: number) => api.post(`/notifications/reminders/${id}/run`),
+  
+  // Notification Settings (Admin only)
+  getSettings: () => api.get('/notifications/settings'),
+  updateSettings: (data: any) => api.put('/notifications/settings', data),
+  
+  // User Preferences
+  getPreferences: () => api.get('/notifications/preferences'),
+  updatePreferences: (data: any) => api.put('/notifications/preferences', data),
 };
 
 export default api;

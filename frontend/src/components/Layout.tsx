@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -34,6 +34,8 @@ import {
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { logout } from '../store/slices/authSlice';
+import { fetchUnreadCount } from '../store/slices/notificationsSlice';
+import NotificationPanel from './NotificationPanel';
 
 const drawerWidth = 260;
 
@@ -167,6 +169,26 @@ const Layout = () => {
     </Box>
   );
 
+  // Notification panel state
+  const [notificationAnchor, setNotificationAnchor] = useState<null | HTMLElement>(null);
+  const notificationOpen = Boolean(notificationAnchor);
+  const { unreadCount } = useAppSelector((state: any) => state.notifications);
+
+  // Fetch unread notification count on mount
+  useEffect(() => {
+    if (isStudent && user) {
+      dispatch(fetchUnreadCount());
+    }
+  }, [dispatch, isStudent, user]);
+
+  const handleNotificationClick = (event: React.MouseEvent<HTMLElement>) => {
+    setNotificationAnchor(event.currentTarget);
+  };
+
+  const handleNotificationClose = () => {
+    setNotificationAnchor(null);
+  };
+
   return (
     <Box sx={{ display: 'flex' }}>
       <AppBar
@@ -189,14 +211,19 @@ const Layout = () => {
             <MenuIcon />
           </IconButton>
           <Box sx={{ flexGrow: 1 }} />
-          {/* Notification Bell - only for student */}
-          {isStudent && (
-            <IconButton sx={{ mr: 2 }}>
-              <Badge badgeContent={2} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
-          )}
+          {/* Notification Bell - for all authenticated users */}
+          <IconButton sx={{ mr: 2 }} onClick={handleNotificationClick}>
+            <Badge badgeContent={unreadCount > 0 ? unreadCount : 0} color="error">
+              <NotificationsIcon />
+            </Badge>
+          </IconButton>
+
+          {/* Notification Panel */}
+          <NotificationPanel
+            anchorEl={notificationAnchor}
+            open={notificationOpen}
+            onClose={handleNotificationClose}
+          />
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Box sx={{ textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
               <Typography variant="body2" fontWeight="600">
