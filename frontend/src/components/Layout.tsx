@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import NotificationPanel from './NotificationPanel';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -57,6 +58,7 @@ const Layout = () => {
   const location = useLocation();
   const { user } = useAppSelector((state) => state.auth);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [studentProfile, setStudentProfile] = useState<{first_name: string; last_name: string; course: string; semester: number} | null>(null);
 
@@ -191,7 +193,7 @@ const Layout = () => {
           <Box sx={{ flexGrow: 1 }} />
           {/* Notification Bell - only for student */}
           {isStudent && (
-            <IconButton sx={{ mr: 2 }}>
+            <IconButton sx={{ mr: 2 }} onClick={() => setNotificationPanelOpen(true)}>
               <Badge badgeContent={2} color="error">
                 <NotificationsIcon />
               </Badge>
@@ -270,6 +272,10 @@ const Layout = () => {
       >
         <Outlet />
       </Box>
+      <NotificationPanel 
+        open={notificationPanelOpen} 
+        onClose={() => setNotificationPanelOpen(false)} 
+      />
     </Box>
   );
 };

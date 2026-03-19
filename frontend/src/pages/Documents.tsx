@@ -4,7 +4,8 @@ import {
   TableContainer, TableHead, TableRow, Chip, Grid, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton, Autocomplete
 } from '@mui/material';
-import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail } from '@mui/icons-material';
+import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail, Send as SendIcon } from '@mui/icons-material';
+import { notificationsAPI } from '../services/api';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchDocuments, fetchDocumentStats, uploadDocument, verifyDocument, rejectDocument } from '../store/slices/documentsSlice';
 import { fetchStudents } from '../store/slices/studentsSlice';
@@ -280,6 +281,9 @@ const Documents = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" fontWeight="bold">Document Management</Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="outlined" startIcon={<SendIcon />} onClick={async () => { try { const res = await notificationsAPI.sendDocumentReminders(); alert(res.data.message); } catch (e) { alert('Failed to send reminders'); } }}>
+            Send Reminder
+          </Button>
           <Button variant="outlined" startIcon={<Mail />} onClick={() => setOpenRequest(true)}>
             Request Document
           </Button>

@@ -6,8 +6,9 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.security import get_password_hash
-from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus, DocumentType
-from app.routers import auth, students, fees, documents, courses, payments
+from app.core.scheduler import start_scheduler, stop_scheduler
+from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus, DocumentType, Notification, NotificationSettings, ScheduledReminder, UserNotificationPreferences
+from app.routers import auth, students, fees, documents, courses, payments, notifications
 from datetime import datetime, timedelta
 from sqlalchemy import select
 
@@ -132,8 +133,11 @@ async def lifespan(app: FastAPI):
     await seed_admin_user()
     # Seed document types
     await seed_document_types()
+    # Start notification scheduler
+    start_scheduler(AsyncSessionLocal)
     yield
-    # Shutdown: Close database connections
+    # Shutdown: Stop scheduler and close database connections
+    stop_scheduler()
     await engine.dispose()
 
 
@@ -161,6 +165,7 @@ app.include_router(fees.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(courses.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 
 # Serve uploaded files
 import os

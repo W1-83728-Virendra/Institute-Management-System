@@ -216,3 +216,92 @@ class DocumentAuditLog(Base):
 
 
 # NOTE: Course-Fee relationship removed - fees now use course name directly
+
+
+# ==================== Notification Models ====================
+
+
+class NotificationType(str, enum.Enum):
+    """Types of notifications in the system"""
+    FEE_DUE = "fee_due"
+    FEE_OVERDUE = "fee_overdue"
+    FEE_REMINDER = "fee_reminder"
+    DOCUMENT_PENDING = "document_pending"
+    DOCUMENT_VERIFIED = "document_verified"
+    DOCUMENT_REJECTED = "document_rejected"
+    DOCUMENT_REQUEST = "document_request"
+    GENERAL = "general"
+
+
+class ReminderFrequency(str, enum.Enum):
+    """Frequency options for scheduled reminders"""
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class Notification(Base):
+    """In-app notifications for users"""
+    __tablename__ = "notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(SQLEnum(NotificationType), default=NotificationType.GENERAL)
+    is_read = Column(Boolean, default=False, index=True)
+    link = Column(String(500), nullable=True)
+    related_id = Column(Integer, nullable=True)
+    related_type = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    user = relationship("User")
+
+
+class ScheduledReminder(Base):
+    """Scheduled reminder jobs for automated notifications"""
+    __tablename__ = "scheduled_reminders"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    notification_type = Column(SQLEnum(NotificationType), nullable=False)
+    frequency = Column(SQLEnum(ReminderFrequency), default=ReminderFrequency.DAILY)
+    day_of_week = Column(Integer, nullable=True)
+    hour = Column(Integer, default=9)
+    minute = Column(Integer, default=0)
+    days_before = Column(Integer, default=3)
+    is_active = Column(Boolean, default=True)
+    last_run = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class NotificationSettings(Base):
+    """Global notification settings (admin configured)"""
+    __tablename__ = "notification_settings"
+    
+    id = Column(Integer, primary_key=True)
+    fee_reminders_enabled = Column(Boolean, default=True)
+    fee_reminder_days_before = Column(Integer, default=3)
+    fee_reminder_frequency = Column(SQLEnum(ReminderFrequency), default=ReminderFrequency.DAILY)
+    fee_reminder_time = Column(String(10), default="09:00")
+    document_reminders_enabled = Column(Boolean, default=True)
+    document_reminder_frequency = Column(SQLEnum(ReminderFrequency), default=ReminderFrequency.WEEKLY)
+    document_reminder_day = Column(Integer, default=0)
+    document_reminder_time = Column(String(10), default="10:00")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class UserNotificationPreferences(Base):
+    """User-specific notification preferences"""
+    __tablename__ = "user_notification_preferences"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    in_app_enabled = Column(Boolean, default=True)
+    fee_notifications = Column(Boolean, default=True)
+    document_notifications = Column(Boolean, default=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    user = relationship("User")

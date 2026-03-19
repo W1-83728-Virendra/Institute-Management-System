@@ -32,3 +32,6 @@ starlette==0.35.1
 
 # Payment Gateway
 razorpay==1.4.0
+
+# Scheduler
+apscheduler==3.10.4

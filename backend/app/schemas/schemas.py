@@ -366,3 +366,141 @@ class DocumentTypeResponse(DocumentTypeBase):
     
     class Config:
         from_attributes = True
+
+
+# ==================== Notification Schemas ====================
+
+class NotificationTypeEnum(str, Enum):
+    FEE_DUE = "fee_due"
+    FEE_OVERDUE = "fee_overdue"
+    FEE_REMINDER = "fee_reminder"
+    DOCUMENT_PENDING = "document_pending"
+    DOCUMENT_VERIFIED = "document_verified"
+    DOCUMENT_REJECTED = "document_rejected"
+    DOCUMENT_REQUEST = "document_request"
+    GENERAL = "general"
+
+
+class ReminderFrequencyEnum(str, Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class NotificationBase(BaseModel):
+    title: str
+    message: str
+    notification_type: NotificationTypeEnum = NotificationTypeEnum.GENERAL
+    link: Optional[str] = None
+    related_id: Optional[int] = None
+    related_type: Optional[str] = None
+
+
+class NotificationCreate(NotificationBase):
+    user_id: int
+
+
+class NotificationResponse(NotificationBase):
+    id: int
+    user_id: int
+    is_read: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class NotificationUpdate(BaseModel):
+    is_read: Optional[bool] = None
+
+
+class NotificationListResponse(BaseModel):
+    total: int
+    unread_count: int
+    items: List[NotificationResponse]
+
+
+class ScheduledReminderBase(BaseModel):
+    name: str
+    notification_type: NotificationTypeEnum
+    frequency: ReminderFrequencyEnum = ReminderFrequencyEnum.DAILY
+    day_of_week: Optional[int] = None
+    hour: int = 9
+    minute: int = 0
+    days_before: int = 3
+    is_active: bool = True
+
+
+class ScheduledReminderCreate(ScheduledReminderBase):
+    pass
+
+
+class ScheduledReminderUpdate(BaseModel):
+    name: Optional[str] = None
+    frequency: Optional[ReminderFrequencyEnum] = None
+    day_of_week: Optional[int] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+    days_before: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ScheduledReminderResponse(ScheduledReminderBase):
+    id: int
+    last_run: Optional[datetime] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class NotificationSettingsBase(BaseModel):
+    fee_reminders_enabled: bool = True
+    fee_reminder_days_before: int = 3
+    fee_reminder_frequency: ReminderFrequencyEnum = ReminderFrequencyEnum.DAILY
+    fee_reminder_time: str = "09:00"
+    document_reminders_enabled: bool = True
+    document_reminder_frequency: ReminderFrequencyEnum = ReminderFrequencyEnum.WEEKLY
+    document_reminder_day: int = 0
+    document_reminder_time: str = "10:00"
+
+
+class NotificationSettingsUpdate(BaseModel):
+    fee_reminders_enabled: Optional[bool] = None
+    fee_reminder_days_before: Optional[int] = None
+    fee_reminder_frequency: Optional[ReminderFrequencyEnum] = None
+    fee_reminder_time: Optional[str] = None
+    document_reminders_enabled: Optional[bool] = None
+    document_reminder_frequency: Optional[ReminderFrequencyEnum] = None
+    document_reminder_day: Optional[int] = None
+    document_reminder_time: Optional[str] = None
+
+
+class NotificationSettingsResponse(NotificationSettingsBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class UserNotificationPreferencesBase(BaseModel):
+    in_app_enabled: bool = True
+    fee_notifications: bool = True
+    document_notifications: bool = True
+
+
+class UserNotificationPreferencesUpdate(BaseModel):
+    in_app_enabled: Optional[bool] = None
+    fee_notifications: Optional[bool] = None
+    document_notifications: Optional[bool] = None
+
+
+class UserNotificationPreferencesResponse(UserNotificationPreferencesBase):
+    id: int
+    user_id: int
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True

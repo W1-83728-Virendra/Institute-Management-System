@@ -18,11 +18,15 @@ const api = axios.create({
   },
 });
 
-// Log all requests
+// Add auth header to all requests
 api.interceptors.request.use((config) => {
   const authHeader = getAuthHeader();
-  console.log(`Request: ${config.method?.toUpperCase()} ${config.url}`,
-    authHeader.Authorization ? 'WITH auth' : 'NO auth');
+  if (authHeader.Authorization) {
+    config.headers.Authorization = authHeader.Authorization;
+    console.log(`Request: ${config.method?.toUpperCase()} ${config.url} WITH auth`);
+  } else {
+    console.log(`Request: ${config.method?.toUpperCase()} ${config.url} NO auth`);
+  }
   return config;
 });
 
@@ -280,6 +284,44 @@ export const paymentsAPI = {
     });
     return response;
   },
+};
+
+// ==================== Notifications API ====================
+export const notificationsAPI = {
+  // Get all notifications
+  getAll: (params?: { page?: number; page_size?: number; unread_only?: boolean }) => 
+    api.get('/notifications', { params }),
+  
+  // Get unread count
+  getUnreadCount: () => api.get('/notifications/unread-count'),
+  
+  // Mark as read
+  markAsRead: (id: number) => api.put(`/notifications/${id}/read`),
+  
+  // Mark all as read
+  markAllAsRead: () => api.put('/notifications/read-all'),
+  
+  // Delete notification
+  delete: (id: number) => api.delete(`/notifications/${id}`),
+  
+  // Scheduled Reminders (Admin only)
+  getReminders: () => api.get('/notifications/reminders'),
+  createReminder: (data: any) => api.post('/notifications/reminders', data),
+  updateReminder: (id: number, data: any) => api.put(`/notifications/reminders/${id}`, data),
+  deleteReminder: (id: number) => api.delete(`/notifications/reminders/${id}`),
+  triggerReminder: (id: number) => api.post(`/notifications/reminders/${id}/run`),
+  
+  // Manual Bulk Reminders (Admin only)
+  sendFeeReminders: () => api.post('/notifications/reminders/send-fees'),
+  sendDocumentReminders: () => api.post('/notifications/reminders/send-documents'),
+  
+  // Notification Settings (Admin only)
+  getSettings: () => api.get('/notifications/settings'),
+  updateSettings: (data: any) => api.put('/notifications/settings', data),
+  
+  // User Preferences
+  getPreferences: () => api.get('/notifications/preferences'),
+  updatePreferences: (data: any) => api.put('/notifications/preferences', data),
 };
 
 export default api;
