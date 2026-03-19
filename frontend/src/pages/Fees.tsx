@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import { Add as AddIcon, Send as SendIcon, Visibility as ViewIcon, Group as GroupIcon, Search as SearchIcon, FilterList as FilterIcon, Clear as ClearIcon } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { notificationsAPI } from '../services/api';
 import { fetchFees, fetchDashboardStats, payFee, createFee } from '../store/slices/feesSlice';
 import { fetchStudents } from '../store/slices/studentsSlice';
 import { feesAPI } from '../services/api';
@@ -123,8 +124,13 @@ const Fees = () => {
     }
   };
 
-  const handleSendReminder = () => {
-    setSnackbar({ open: true, message: 'Reminders sent to all students with pending fees', severity: 'success' });
+  const handleSendReminder = async () => {
+    try {
+      const response = await notificationsAPI.sendFeeReminders();
+      setSnackbar({ open: true, message: response.data.message || 'Fee reminders sent successfully', severity: 'success' });
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error?.response?.data?.detail || 'Failed to send reminders', severity: 'error' });
+    }
   };
 
   const handleViewFee = (fee: any) => {

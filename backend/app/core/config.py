@@ -23,15 +23,17 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     
     # CORS
-    # BACKEND_CORS_ORIGINS: list = ["http://localhost:3000"]
-    # BACKEND_CORS_ORIGINS: list = ["http://localhost:3000", "http://192.168.1.102:5173", "http://localhost:5173"]
-
     BACKEND_CORS_ORIGINS: list = ["*"]
-
+    
+    # Razorpay Payment Gateway
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_PAYMENT_URL: str = "https://api.razorpay.com/v1"
     
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
     @field_validator('DEBUG', mode='before')
     @classmethod

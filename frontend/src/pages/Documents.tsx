@@ -5,7 +5,8 @@ import {
   DialogActions, TextField, MenuItem, Snackbar, Alert, IconButton, InputAdornment,
   FormControl, InputLabel, Select, OutlinedInput, TableSortLabel, useTheme, useMediaQuery, Paper
 } from '@mui/material';
-import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail, Search, FilterList, Clear } from '@mui/icons-material';
+import { CloudUpload as UploadIcon, CheckCircle, Cancel, Download, Visibility, Close, Mail, Search, FilterList, Clear, Send as SendIcon } from '@mui/icons-material';
+import { notificationsAPI } from '../services/api';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchDocuments, fetchDocumentStats, uploadDocument, verifyDocument, rejectDocument, setFilters, clearFilters } from '../store/slices/documentsSlice';
 import { fetchStudents } from '../store/slices/studentsSlice';
@@ -318,6 +319,15 @@ const Documents = () => {
     }
   };
 
+  const handleSendDocumentReminder = async () => {
+    try {
+      const response = await notificationsAPI.sendDocumentReminders();
+      setSnackbar({ open: true, message: response.data.message || 'Document reminders sent successfully', severity: 'success' });
+    } catch (error: any) {
+      setSnackbar({ open: true, message: error?.response?.data?.detail || 'Failed to send reminders', severity: 'error' });
+    }
+  };
+
   const handleDownload = async (doc: any) => {
     try {
       const response = await documentsAPI.download(doc.id);
@@ -339,6 +349,9 @@ const Documents = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" fontWeight="bold">Document Management</Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="outlined" startIcon={<SendIcon />} onClick={handleSendDocumentReminder}>
+            Send Reminder
+          </Button>
           <Button variant="outlined" startIcon={<Mail />} onClick={() => setOpenRequest(true)}>
             Request Document
           </Button>

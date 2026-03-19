@@ -257,11 +257,11 @@ const getApiUrl = () => {
   
   // If accessing from localhost, use localhost
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8004/api';
+    return 'http://localhost:8000/api';
   }
   
   // If accessing from mobile/tablet (using IP), use that IP
-  return `http://${hostname}:8004/api`;
+  return `http://${hostname}:8000/api`;
 };
 
 const API_URL = getApiUrl();
@@ -377,7 +377,7 @@ export const documentsAPI = {
   getById: (id: number) => api.get(`/documents/${id}`),
   getTypes: () => api.get('/documents/types'),
   create: (data: any) => api.post('/documents', data),
-  createDocumentRequest: (data: any) => api.post('/documents/request', data),
+  createDocumentRequest: (data: any) => api.post('/documents/requests', data),
   update: (id: number, data: any) => api.put(`/documents/${id}`, data),
   delete: (id: number) => api.delete(`/documents/${id}`),
   
@@ -438,6 +438,10 @@ export const notificationsAPI = {
   updateReminder: (id: number, data: any) => api.put(`/notifications/reminders/${id}`, data),
   deleteReminder: (id: number) => api.delete(`/notifications/reminders/${id}`),
   triggerReminder: (id: number) => api.post(`/notifications/reminders/${id}/run`),
+  
+  // Manual Bulk Reminders (Admin only)
+  sendFeeReminders: () => api.post('/notifications/reminders/send-fees'),
+  sendDocumentReminders: () => api.post('/notifications/reminders/send-documents'),
   
   // Notification Settings (Admin only)
   getSettings: () => api.get('/notifications/settings'),

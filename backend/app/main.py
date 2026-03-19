@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.security import get_password_hash
 from app.core.scheduler import start_scheduler, stop_scheduler
+
 from app.models.models import Base, User, Student, Course, Fee, Document, FeeStatus, DocumentStatus, Notification, NotificationSettings, ScheduledReminder, UserNotificationPreferences
 from app.routers import auth, students, fees, documents, notifications
 from datetime import datetime, timedelta

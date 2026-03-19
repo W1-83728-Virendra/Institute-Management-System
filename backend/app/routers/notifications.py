@@ -397,6 +397,106 @@ async def trigger_reminder(
     return {"message": f"Reminder executed, created {created_count} notifications"}
 
 
+@router.post("/reminders/send-fees")
+async def send_fee_reminders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually send fee reminders to all students with pending fees (admin only)"""
+    # Check if admin
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can send reminders"
+        )
+    
+    # Get all pending fees
+    result = await db.execute(
+        select(Fee).where(Fee.status == "pending")
+    )
+    fees = result.scalars().all()
+    
+    created_count = 0
+    processed_students = set()
+    
+    for fee in fees:
+        # Get student info
+        student_result = await db.execute(
+            select(Student).where(Student.id == fee.student_id)
+        )
+        student = student_result.scalar_one_or_none()
+        
+        if student and student.user_id and student.user_id not in processed_students:
+            processed_students.add(student.user_id)
+            
+            # Create notification
+            notification = Notification(
+                user_id=student.user_id,
+                title="Fee Payment Reminder",
+                message=f"You have pending fee: {fee.fee_type} - ₹{fee.amount}. Due date: {fee.due_date.strftime('%d %b %Y')}",
+                notification_type=NotificationType.FEE_REMINDER,
+                link="/student/fees",
+                related_id=fee.id,
+                related_type="fee"
+            )
+            db.add(notification)
+            created_count += 1
+    
+    await db.commit()
+    
+    return {"message": f"Sent {created_count} fee reminders to students with pending fees"}
+
+
+@router.post("/reminders/send-documents")
+async def send_document_reminders(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually send document reminders to students with pending document requests (admin only)"""
+    # Check if admin
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can send reminders"
+        )
+    
+    # Get all pending document requests
+    result = await db.execute(
+        select(DocumentRequest).where(DocumentRequest.status == "pending")
+    )
+    requests = result.scalars().all()
+    
+    created_count = 0
+    processed_students = set()
+    
+    for doc_request in requests:
+        # Get student info
+        student_result = await db.execute(
+            select(Student).where(Student.id == doc_request.student_id)
+        )
+        student = student_result.scalar_one_or_none()
+        
+        if student and student.user_id and student.user_id not in processed_students:
+            processed_students.add(student.user_id)
+            
+            # Create notification
+            notification = Notification(
+                user_id=student.user_id,
+                title="Document Submission Reminder",
+                message=f"Please submit your {doc_request.document_type} document",
+                notification_type=NotificationType.DOCUMENT_REQUEST,
+                link="/student/documents",
+                related_id=doc_request.id,
+                related_type="document_request"
+            )
+            db.add(notification)
+            created_count += 1
+    
+    await db.commit()
+    
+    return {"message": f"Sent {created_count} document reminders to students"}
+
+
 async def _execute_reminder(db: AsyncSession, reminder: ScheduledReminder) -> int:
     """Execute a reminder and create notifications"""
     created_count = 0
